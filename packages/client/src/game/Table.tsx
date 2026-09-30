@@ -1,6 +1,7 @@
 import { PHASE_LABEL, type Phase } from '@tcd/shared';
 import { AnimatePresence } from 'motion/react';
 import { useState, type CSSProperties } from 'react';
+import { MuteButton } from '../ui/MuteButton';
 import { socket } from '../net';
 import { useStore } from '../store';
 import { playerColor } from '../ui/colors';
@@ -25,14 +26,16 @@ export function Table() {
   const myIdx = Math.max(0, game.players.findIndex((p) => p.id === meId));
   const opponents = Array.from({ length: n }, (_, k) => game.players[(myIdx + k + (meId ? 1 : 0)) % n]).slice(0, meId ? n - 1 : n);
 
+  const dense = opponents.length >= 6;
+
   return (
     <PromptProvider>
-      <div className="table">
+      <div className={`table ${dense ? 'table--dense' : ''}`}>
         <div className="table__bg" />
         <TopBar onToggleSide={() => setSideOpen((v) => !v)} />
         <div className={`table__grid ${sideOpen ? 'side-open' : ''}`}>
           <main className="table__main">
-            <div className="opponents" style={{ '--n': opponents.length } as CSSProperties}>
+            <div className={`opponents ${dense ? 'opponents--dense' : ''}`} style={{ '--n': opponents.length, '--cols': Math.ceil(opponents.length / 2) } as CSSProperties}>
               {opponents.map((p, i) => {
                 const t = opponents.length > 1 ? (i / (opponents.length - 1)) * 2 - 1 : 0;
                 return <Seat key={p.id} p={p} style={{ '--arc': `${t * t * 36}px` } as CSSProperties} />;
@@ -89,11 +92,13 @@ function TopBar({ onToggleSide }: { onToggleSide: () => void }) {
         ) : (
           <b className="topbar__who">{PHASE_LABEL[game.phase]}</b>
         )}
+        <span className="topbar__phase">{PHASE_LABEL[game.phase]}</span>
       </div>
 
       <div className="topbar__right">
-        <button className="btn btn--ghost btn--sm" onClick={() => setOverlay('rules')}>规则</button>
-        <button className="btn btn--ghost btn--sm" onClick={() => setOverlay('gallery')}>图鉴</button>
+        <MuteButton />
+        <button className="btn btn--ghost btn--sm topbar__hide-sm" onClick={() => setOverlay('rules')}>规则</button>
+        <button className="btn btn--ghost btn--sm topbar__hide-sm" onClick={() => setOverlay('gallery')}>图鉴</button>
         <button className="btn btn--ghost btn--sm topbar__sidetoggle" onClick={onToggleSide}>
           战况{unread > 0 && <span className="dot">{unread}</span>}
         </button>

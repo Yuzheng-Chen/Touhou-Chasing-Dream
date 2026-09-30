@@ -29,8 +29,18 @@ export function CardPreview() {
     return () => window.removeEventListener('pointermove', onMove);
   }, [hover]);
 
-  // Touch devices: no hover previews.
-  if (typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches) return null;
+  // Touch devices: a centred preview while the card is held down.
+  if (typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches) {
+    return (
+      <AnimatePresence>
+        {hover && (
+          <motion.div className="card-preview card-preview--touch" key={hover} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <Card id={hover} size="xl" noPreview />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
 
   return (
     <div ref={ref} className="card-preview" aria-hidden>

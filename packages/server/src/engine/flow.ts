@@ -44,6 +44,14 @@ async function safely(g: Game, what: string, f: () => Promise<void>) {
 async function selectRoles(g: Game) {
   g.s.phase = 'roleSelect';
   const n = g.players.length;
+  if (g.opts.roles) {
+    g.players.forEach((p, i) => {
+      p.role = g.opts.roles![i % g.opts.roles!.length];
+      p.roleOptions = [p.role];
+      if (p.role === 'hermit' || g.opts.revealRoles) g.reveal(p, '千人千乡：开局正面向上');
+    });
+    return;
+  }
   const k = Math.max(1, Math.min(g.opts.roleChoices, Math.floor(ROLE_CARDS.length / n)));
   // Balance: everyone is offered at least one 繁荣 and one 小众 role when possible.
   const pool = g.rng.shuffle(ROLE_CARDS.map((r) => r.id));

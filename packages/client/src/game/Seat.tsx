@@ -35,6 +35,7 @@ export function Seat({ p, style }: { p: PlayerView; style?: CSSProperties }) {
           <span className="seat__nametext">{p.name}</span>
           {p.isBot && <span className="seat__tag">AI</span>}
           {!p.connected && <span className="seat__tag seat__tag--off">离线</span>}
+          {p.auto && <span className="seat__tag seat__tag--off" title="由 AI 代为操作">托管</span>}
         </div>
         <InfluenceMeter value={p.influence} cap={p.influenceCap} playerId={p.id} />
         <div className="seat__stats">

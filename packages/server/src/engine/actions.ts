@@ -311,13 +311,15 @@ export const ACTIONS: Record<string, ActionHandler> = {
 
   // ── 火星 ──────────────────────────────────────────
   mars: {
-    canPlay: (g, p) => !!p.turnEvent && g.s.eventDiscard.length > 0 && !g.turn?.marsEvent,
+    canPlay: (g, p) => !!p.turnEvent && !g.turn?.marsEvent,
     async play(ctx) {
       const { g, player } = ctx;
       if (!player.turnEvent) return;
+      // The held event is discarded first, so it can itself be picked back up.
+      g.s.eventDiscard.push(player.turnEvent);
+      player.turnEvent = null;
       const pool = [...g.s.eventDiscard];
       const [pick] = await g.chooseFromList(player, '火星：从事件弃牌堆中选择一张事件牌', pool, 1, 1, { cardId: ctx.defId });
-      g.s.eventDiscard.push(player.turnEvent);
       g.s.eventDiscard = g.s.eventDiscard.filter((c) => c !== pick);
       player.turnEvent = pick;
       if (g.turn) g.turn.marsEvent = true;

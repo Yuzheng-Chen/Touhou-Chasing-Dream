@@ -6,3 +6,4 @@ admin_account_use_when_install.txt
 tools/art/out/
 tools/art/raw/
 .DS_Store
+e2e/out/

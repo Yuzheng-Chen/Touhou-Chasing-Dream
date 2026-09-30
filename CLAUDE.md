@@ -2,6 +2,7 @@
 
 Web version of the hidden-role card game described in `game_rule.pdf` (rulebook, rev. 20190905) and `cards.md` (card list).
 Players host it on a VPS and play with friends in the browser. UI language: Simplified Chinese.
+Status: feature-complete for a 1.0 playtest; see "Known gaps" at the bottom.
 
 ## Environment (this Windows PC)
 
@@ -12,22 +13,29 @@ winget is blocked by Group Policy, so the toolchain is **portable** under `%USER
 $t="$env:USERPROFILE\tools"; $env:Path="$t\node;$t\python312;$t\python312\Scripts;$t\git\cmd;$env:Path"
 ```
 
-Never commit or print `admin_account_use_when_install.txt` (it is git/docker-ignored).
+* Git refuses the repo (owned by a different Windows account) until
+  `git config --global --add safe.directory "C:/Users/cheny198/Desktop/Touhou Chasing Dream"` — already done on this PC.
+* PowerShell pitfall when patching files with `-replace`/`.Replace` in double-quoted strings: `$(...)` and `${...}` are
+  expanded. Prefer the Edit tool for JS/TS containing `$(`.
+* Never commit or print `admin_account_use_when_install.txt` (git/docker-ignored).
 
 ## Commands
 
 | What | Command |
 |---|---|
-| Dev (server :3000 + Vite :5173 with WS proxy) | `npm run dev` → open http://localhost:5173 |
-| Tests (engine rules + bot fuzzing) | `npm test` |
+| Dev (server :3000 + Vite :5173 with WS proxy) | `npm run dev` → http://localhost:5173 |
+| **Several human seats on this PC** | `npm run local` (or dev server + http://localhost:5173/local) — see "Local multi-seat" |
+| Unit + integration tests (≈2 s) | `npm test` |
 | Typecheck everything | `npm run typecheck` |
-| Bot-vs-bot balance sim | `npm run sim -w @tcd/server -- 300 5` (games, players) |
-| Production build | `npm run build` then `npm start` (serves client + WS on `PORT`, default 3000) |
+| Real-browser multiplayer test | `npm run e2e -- --players 4 --games 2` (builds first; `--players all` = 3…8) |
+| Everything (types, tests, e2e 3–8p, console, phone) | `npm run check` |
+| Bot-vs-bot balance sim | `npm run sim -w @tcd/server -- 2000 5` (games, players) |
+| Production build / run | `npm run build` then `npm start` (serves client + WS on `PORT`, default 3000) |
 | Deploy on VPS | `DOMAIN=game.example.com docker compose -f deploy/docker-compose.yml up -d --build` |
 
 ## Architecture
 
-npm workspaces monorepo:
+npm workspaces monorepo (`packages/*`, `e2e`):
 
 ```
 packages/shared   Card catalogue + wire protocol + rule constants (pure TS, no deps)
@@ -35,7 +43,7 @@ packages/shared   Card catalogue + wire protocol + rule constants (pure TS, no d
   src/protocol.ts   Prompt (decisions), GameView (per-player projection), LogEntry+Fx, socket event maps
   src/rules.ts      limits, judgement tables, endThreshold
 packages/server   Authoritative engine + Socket.IO rooms (Express serves the built client)
-  src/engine/Game.ts     state + primitives: ask(), draw/discard/transfer, changeInfluence/changeCommunity, judge, officialActive
+  src/engine/Game.ts     state + primitives: ask(), setAuto(), draw/discard/transfer, changeInfluence/changeCommunity, judge, officialActive
   src/engine/flow.ts     game loop: role select → rounds → turn phases → final settlement; playCard, listMoves
   src/engine/actions.ts  one handler per action card
   src/engine/events.ts   one handler per event card, EventCtx (event-only modifiers), resolveEvent, decideDirection (最终解释权 → 墨菲定律)
@@ -43,15 +51,19 @@ packages/server   Authoritative engine + Socket.IO rooms (Express serves the bui
   src/engine/officials.ts revealOfficial (花映塚 / 凭依华); other officials are queried inline via g.officialActive(id)
   src/engine/scoring.ts  win conditions, bonuses, 胜点
   src/engine/view.ts     buildView(): hides hands, face-down roles/events, others' prompts
-  src/engine/bot.ts      random-but-sane bot (also used for fuzzing)
-  src/rooms.ts           RoomHub: sessions (token → playerId), rooms (4-char code), bots, host controls, chat, reconnect
+  src/engine/bot.ts      heuristic bot (AI seats AND 托管 for absent humans AND fuzzing); never throws
+  src/rooms.ts           RoomHub: sessions (token → playerId), rooms (4-char code), bots, host controls, chat, reconnect, offline 托管
 packages/client   React 19 + Vite + zustand + motion
-  src/store.ts          socket wiring; turns new log entries into an fx queue + meter "pulses"
-  src/cards/Card.tsx    the card component (art + frame + text); CardBack; YinYang
-  src/game/*            Table, Seat, Center (meter/official/decks/zones), MyArea (hand), prompt.tsx (all decision UIs), Fx, Results, SidePanel
-  src/screens/*         Home, Lobby, Sheets (rules + card gallery)
-  public/art/cards/<cardId>.webp, public/art/bg/*.webp   generated illustrations
-tools/art          ComfyUI pipeline (see "Art" below)
+  src/store.ts          socket wiring; fx queue + meter "pulses"; sounds; auto-join (?auto=); reports status to /local parent
+  src/net.ts            socket, session token, `?as=` identity namespace, prefs
+  src/audio.ts          synthesised sound effects (WebAudio, no assets) + mute
+  src/cards/Card.tsx    the card component (art + frame + text); long-press preview on touch
+  src/game/*            Table, Seat, Center, MyArea (hand), prompt.tsx (every decision UI), Fx, Results, SidePanel
+  src/screens/*         Home, Lobby, Sheets (rules + gallery), LocalSeats (/local console)
+  public/art/…          generated illustrations
+e2e/               Playwright drivers: run.mjs (N independent players), local.mjs (/local console), mobile.mjs (responsive), driver.mjs (the "human")
+scripts/local.mjs  `npm run local`
+tools/art          ComfyUI pipeline (see "Art")
 deploy/            docker-compose + Caddy (auto-HTTPS), systemd unit alternative
 ```
 
@@ -61,6 +73,8 @@ deploy/            docker-compose + Caddy (auto-HTTPS), systemd unit alternative
   `await g.ask(player, promptSpec)` whenever a player must decide. `ask` resolves from the socket
   (`Game.answer`), from the bot (`botAnswer`), from the timeout (`defaultValue`), or from a test script (`opts.decide`).
 * Several `ask`s can be pending at once (simultaneous choices use `Promise.all`).
+* **托管 (auto-play)**: two consecutive prompt timeouts, or 25 s offline mid-game (`TCD_OFFLINE_AUTO_MS`), set `player.auto`;
+  the bot then answers for them. Any answer / reconnect / 取消托管 (`game:resume`) clears it. The table shows a 托管 tag.
 * **All number changes go through `g.changeInfluence` / `g.changeCommunity`.** They apply clamps, 神灵庙,
   备受瞩目 locks, 自闭 immunity, 桃源民 negation, NPC / 分层 / 东方乙烷, and fire role reactions
   (挂裱 counter, 洗地, 扩列, 游场 …). Event cards use `ev.comm()` / `ev.inf()` instead, which add the
@@ -69,14 +83,46 @@ deploy/            docker-compose + Caddy (auto-HTTPS), systemd unit alternative
 * `g.n(x)` = printed number (doubled under 辉针城). Dice results and computed X are *not* doubled.
 * Reaction prompts use `{ secret: true }` so other players can't see who is deciding (hides hand info).
 * Log text uses tokens `{p:playerId}`, `{c:cardId}`, `{n:+2}`; the client renders them as coloured chips.
-  Attach an `Fx` to a log entry to get an animation (`play`, `dice`, `event`, `official`, `reveal`).
-* `safely()` in flow.ts catches handler exceptions so a rules bug skips one effect instead of freezing a live game.
+  Attach an `Fx` to a log entry to get an animation (`play`, `dice`, `event`, `official`, `reveal`) and a sound.
+* `safely()` in flow.ts catches handler exceptions so a rules bug skips one effect instead of freezing a live game
+  (tests fail if anything is caught: they assert `console.error` was never called).
+* **Privacy is enforced only in `view.ts`.** Never put another player's hand/role/face-down event/prompt into a `GameView`.
+  `test/privacy.test.ts` (string-searches serialised views) and `e2e/run.mjs` (checks *every* socket frame) guard this.
 
 ### Adding / fixing a card
 1. Text lives in `packages/shared/src/cards/*.ts` (keep it faithful to the rulebook incl. 规则更正).
 2. Behaviour lives in `ACTIONS[id]`, `EVENTS[id]`, or roles.ts. Use the primitives above.
-3. Add a scripted test in `packages/server/test/rules.test.ts` (see `test/harness.ts`: `scriptedGame`, `giveCards`, `startTurn`, `setOfficial`).
-4. `npm test` — the fuzz suite plays 125 full bot games and checks card conservation + bounds.
+3. Add a scripted test in `packages/server/test/audit.test.ts` (helpers in `test/harness.ts`: `scriptedGame`, `giveCards`,
+   `startTurn`, `setOfficial`; fix dice with `g.rng.die = () => 6`).
+4. `npm test`. `coverage.test.ts` parses `cards.md` and fails if a card/count is missing; `fuzz.test.ts` plays every role
+   (face-up and face-down) and proves every card is reachable by bots.
+
+## Testing
+
+| Layer | Where | What it proves |
+|---|---|---|
+| Coverage audit | `test/coverage.test.ts` | every card name + copy count in `cards.md` exists; every card has a handler |
+| Scripted rules | `test/rules.test.ts`, `test/audit.test.ts` | ~40 FAQ-driven interactions (墨菲/最终解释权, 神灵庙+自爆, 人类的本质, 众筹, scoring, …) |
+| Fuzz | `test/fuzz.test.ts`, `test/simulate.test.ts` | 26 roles × revealed/hidden × 3–8 players, 125+400 full bot games: no engine errors, card conservation, bounds |
+| Privacy | `test/privacy.test.ts` | views never leak hands, turn events, face-down events, hidden roles; prompts routed to the right seat |
+| Rooms | `test/rooms.test.ts` | real sockets: room codes, capacity 8, host-only actions, kick, host transfer, reconnect by token, spectators, chat flood |
+| Browser e2e | `e2e/run.mjs` | N independent browser contexts play full games through the UI: lobby → role pick → game → scoring → rematch → 2nd game; spectator; reload, real network loss, 25 s absence → 托管 → return; privacy invariant on every frame; 0 console errors |
+| Tabs e2e | `e2e/tabs.mjs` | `?as=` gives tabs of ONE browser profile separate identities; reload keeps the seat |
+| Console e2e | `e2e/local.mjs` | `/local` with 4–8 seats in one window plays a game; seats are isolated |
+| Responsive | `e2e/mobile.mjs` | phone/landscape/tablet/laptop: no horizontal overflow, decision panel on-screen |
+
+Server knobs used by e2e (env): `TCD_TEST_FAST=1` (no cosmetic pauses), `TCD_PROMPT_TIMEOUT=0` (seconds; default 60),
+`TCD_OFFLINE_AUTO_MS=3000` (default 25000). The e2e "human" is `e2e/driver.mjs` `ACT()` — it only clicks what a player could click;
+decision UI exposes `data-prompt-id`, `data-kind`, `data-min`, `data-max` for it. Failures leave screenshots in `e2e/out/`.
+
+## Local multi-seat (`/local`)
+
+Several human seats in ONE browser window, each with its own identity, hand and role. `?as=NAME` namespaces the session token and nickname
+in localStorage, so tabs of the same browser are independent players; `/local` embeds one iframe per seat (`/?as=<run><n>&auto=create|join:CODE`).
+Seat 1 creates the room and reports its code via `postMessage`; the others join. Seats report status (waiting for a decision, host, turn,
+role, 托管) to the console, which shows tabs with a red dot when a seat must act. Keys: Alt+1…8. Buttons: add AI, start, rematch,
+focus/grid (grid renders each seat at 1440×820 and scales it), reset identities.
+Same-origin only (`postMessage` checks `location.origin`). It also works in production (hot-seat on a shared screen).
 
 ## Rule interpretations (decided during setup — revisit if playtesters disagree)
 
@@ -92,10 +138,15 @@ deploy/            docker-compose + Caddy (auto-HTTPS), systemd unit alternative
 * NPC: X is capped at ceil(|decrease|/2). 分层 and 居高临下: once per turn.
 * 最终结算: `lockdown` disables active skills and reaction cards; passive skills still apply.
 * First player is random (rulebook uses "youngest player rolls a die").
-* 胜点 tie: equal top score → higher influence gets 2; if still tied, all tied players get 2.
+* 胜点 tie: equal top score → higher influence gets 2; if still tied, all tied players get 2. A player who meets their win
+  condition but has base score 0 gets 0 胜点 (rulebook: "其他得分不为0的玩家计1胜点").
 * Role dealing: each player is offered ≥1 繁荣 and ≥1 小众 role (rulebook suggests balancing).
 * 鬼形兽: the 3rd action card becomes a copy of the last discarded action; if that copy is unplayable (e.g. 墨菲定律) the 3rd card can't be played.
-* 事件牌 counts in `cards.md` sum to 78 (rulebook says 60), actions to 79 (rulebook 80) — we follow `cards.md`.
+* 人类的本质: never enters the discard pile; if it copied a delay card it is passed on when that card triggers.
+* 火星: the held event is discarded first, so it may itself be picked back up.
+* 自闭: others' effects can't touch you (targets, draws, events); your own cards still work.
+* Skills described as usable "在你的回合内任意阶段" (新刊预告/社交教育/发布正片/初音) are offered in the action phase only.
+* `cards.md` totals: 79 action, 78 event, 24 official, 26 role cards (rulebook boxes say 80/60/23/26) — we follow `cards.md`.
 
 ## Art
 
@@ -106,13 +157,14 @@ Generated locally with ComfyUI + Animagine XL 4.0 (SDXL, 832×1216, 28 steps, CF
 * Generate missing: `...\venv\Scripts\python.exe tools/art/generate.py`; redo some: `generate.py id1 id2 --seed-offset 3`.
 * Output: `packages/client/public/art/cards/<id>.webp` (640 px wide) and `.../art/bg/<id>.webp`.
 
-## Roadmap / known gaps (prioritised)
+## Known gaps / roadmap (prioritised)
 
-1. **Playtest with humans** and fix rule edge cases; add a scripted test for each fix.
-2. **Auto-play (托管)** for disconnected players (today their prompts wait for the timeout, then take the default).
-3. Smarter bots (faction-aware: push community toward their side, protect own influence, use reactions wisely).
-4. Sound design (card play, dice, event stingers, turn chime) with a mute toggle.
-5. Mobile polish (hand fan + decision panel on narrow screens; long-press for card preview).
+1. **Playtest with humans** and fix rule edge cases; add a scripted test for each fix. (Bot win rates from `npm run sim` are a smoke test, not balance data.)
+2. Reaction windows (墨菲定律, 挂裱, skills) only prompt players who can react, so response *time* can hint at who holds a card.
+   A fixed-length "others may respond" countdown shown to everyone would close this leak.
+3. Smarter bots (the current one steers 社群规模 by faction and values cards, but doesn't plan, bluff or use most skills well).
+4. Reveal skills usable "at any phase" are only offered during the action phase.
+5. Game state is in memory: a server restart ends running games (lobby/rooms too). Persisting needs an event log + replay (engine is a coroutine).
 6. Card-flight animations between seats for transfers/draws (`Fx` `draw` / `transfer` exist but aren't animated yet).
-7. Game persistence across server restarts (state is in memory; the engine is a coroutine, so this needs an event log + replay).
-8. Spectator polish; in-game tooltips explaining phases; post-game replay of the log.
+7. Sound is synthesised and minimal; real music/SFX would lift the feel. Phone layout is functional, not yet beautiful.
+8. Post-game replay of the log; in-game tutorial / tooltips for first-time players; localisation (strings are hard-coded Chinese).

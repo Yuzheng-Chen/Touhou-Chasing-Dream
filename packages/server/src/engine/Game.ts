@@ -30,6 +30,10 @@ export interface GameOptions {
    * Lets a test script exact decisions without sockets.
    */
   decide?: (g: Game, who: PlayerState, prompt: Prompt) => unknown;
+  /** Tests / custom games: assign these roles by seat instead of letting players choose. */
+  roles?: string[];
+  /** Tests: start with assigned roles face-up so passive skills are exercised. */
+  revealRoles?: boolean;
 }
 
 /** What caused a number to change — decides immunities and triggers. */
@@ -88,7 +92,7 @@ export class Game {
         id: seat.id, name: seat.name, seat: i, isBot: seat.isBot,
         role: '', roleOptions: [], roleRevealed: false, influence: 0,
         hand: [], turnEvent: null, faceDownEvent: null, statuses: [], oshi: [],
-        allegiance: null, idolId: null, pendingGift: [], maxScoreUsed: [],
+        allegiance: null, idolId: null, pendingGift: [], maxScoreUsed: [], auto: false, timeouts: 0,
       })),
       firstIdx: 0,
       turnIdx: null,
@@ -205,7 +209,8 @@ export class Game {
   ): Promise<AnswerOf<K>> {
     if (this.aborted) return Promise.reject(new AbortError());
     const id = `q${++this.promptSeq}`;
-    const timeout = who.isBot ? 0 : this.opts.promptTimeout;
+    const botPlays = who.isBot || who.auto;
+    const timeout = botPlays ? 0 : this.opts.promptTimeout;
     const prompt = { ...spec, id, deadline: timeout ? Date.now() + timeout : 0 } as Prompt;
     return new Promise<AnswerOf<K>>((resolve, reject) => {
       const entry: Pending = {
@@ -230,12 +235,16 @@ export class Game {
           }
           entry.resolve(v ?? botAnswer(this, who, prompt));
         });
-      } else if (who.isBot) {
+      } else if (botPlays) {
         const reply = () => this.pending.has(id) && entry.resolve(botAnswer(this, who, prompt));
         if (this.opts.fast) setImmediate(reply);
         else entry.timer = setTimeout(reply, this.opts.botDelay * (0.6 + this.rng.next() * 0.8));
       } else if (timeout) {
-        entry.timer = setTimeout(() => entry.resolve(prompt.defaultValue), timeout);
+        entry.timer = setTimeout(() => {
+          // Two idle prompts in a row → a bot takes over until the player comes back.
+          if (++who.timeouts >= 2) this.setAuto(who.id, true);
+          entry.resolve(prompt.defaultValue);
+        }, timeout);
       }
       this.touch();
     });
@@ -247,8 +256,26 @@ export class Game {
     if (!p || p.playerId !== playerId) return false;
     const v = normalizeAnswer(p.prompt, value);
     if (v === undefined) return false;
+    const who = this.player(playerId);
+    who.timeouts = 0;
+    if (who.auto) this.setAuto(playerId, false);
     p.resolve(v);
     return true;
+  }
+
+  /** Hand a human seat to a bot (托管) or take it back. Pending prompts are answered by the bot immediately. */
+  setAuto(playerId: string, on: boolean) {
+    const p = this.player(playerId);
+    if (p.isBot || p.auto === on) return;
+    p.auto = on;
+    p.timeouts = 0;
+    this.log(on ? `{p:${p.id}} 进入托管` : `{p:${p.id}} 取消托管`, undefined, 'minor');
+    if (on) {
+      for (const e of [...this.pending.values()]) {
+        if (e.playerId === playerId) setImmediate(() => this.pending.has(e.prompt.id) && e.resolve(botAnswer(this, p, e.prompt)));
+      }
+    }
+    this.touch();
   }
 
   abort() {

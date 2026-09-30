@@ -157,6 +157,8 @@ export interface PlayerView {
   seat: number;
   isBot: boolean;
   connected: boolean;
+  /** 托管: a bot is answering for this human. */
+  auto: boolean;
   influence: number;
   influenceCap: number;
   handCount: number;
@@ -288,6 +290,8 @@ export interface ClientToServer {
   'room:start': (ack: Ack<null>) => void;
   'room:rematch': () => void;
   'game:answer': (p: { promptId: string; value: unknown }) => void;
+  /** Take your seat back from 托管. */
+  'game:resume': () => void;
   'chat:send': (p: { text: string }) => void;
 }
 

@@ -1,0 +1,13 @@
+{
+  "name": "@tcd/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Real-browser multiplayer tests: N independent players driven through the UI",
+  "scripts": {
+    "e2e": "node run.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

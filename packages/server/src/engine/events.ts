@@ -487,7 +487,11 @@ export async function resolveEvent(g: Game, owner: PlayerState, card: CardInstan
   if (card.defId === 'blooming' && dir === 'down') g.log('遍地开花（逆向）直接进入弃牌堆，无任何效果', undefined, 'minor');
   await (dir === 'down' && h.down ? h.down : h.up)(ev);
 
-  g.toDiscard(delays.map((x) => x.card));
+  for (const d of delays) {
+    // 人类的本质 never enters the discard pile: it is handed to the owner's next player instead.
+    if (d.card.defId === 'human_nature') g.next(g.player(d.ownerId)).pendingGift.push(d.card);
+    else g.toDiscard([d.card]);
+  }
   if (!ev.keep && !ev.chained) {
     g.s.eventDiscard.push(card);
     g.s.lastEvent = { defId: card.defId, direction: dir };

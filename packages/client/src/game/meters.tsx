@@ -67,7 +67,6 @@ export function InfluenceMeter({ value, cap, playerId, big }: { value: number; c
     <div className={`imeter ${big ? 'imeter--big' : ''}`} title={`个人影响力 ${value}（上限 ±${cap}）`}>
       <span className={`imeter__num ${value > 0 ? 'is-pos' : value < 0 ? 'is-neg' : ''}`}>
         {value > 0 ? `+${value}` : value}
-        <PulseFloat target={playerId} />
       </span>
       <span className="imeter__pips">
         {Array.from({ length: cap * 2 + 1 }, (_, i) => {
@@ -76,6 +75,7 @@ export function InfluenceMeter({ value, cap, playerId, big }: { value: number; c
           return <i key={i} className={`${v === 0 ? 'is-zero' : ''} ${on ? (v > 0 ? 'is-on-pos' : 'is-on-neg') : ''}`} />;
         })}
       </span>
+      <PulseFloat target={playerId} />
     </div>
   );
 }

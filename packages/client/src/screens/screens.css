@@ -172,6 +172,7 @@
 .lobby__grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
+  min-width: 0;
   gap: 20px;
   max-width: 1280px;
   min-height: 100%;
@@ -325,6 +326,6 @@
 }
 
 @media (max-width: 900px) {
-  .lobby__grid { grid-template-columns: 1fr; }
+  .lobby__grid { grid-template-columns: minmax(0, 1fr); }
   .lobby__code { font-size: 40px; }
 }

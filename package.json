@@ -7,13 +7,18 @@
   "workspaces": [
     "packages/shared",
     "packages/server",
-    "packages/client"
+    "packages/client",
+    "e2e"
   ],
   "scripts": {
     "dev": "concurrently -k -n server,client -c magenta,cyan \"npm run dev -w @tcd/server\" \"npm run dev -w @tcd/client\"",
     "build": "npm run build -w @tcd/client && npm run build -w @tcd/server",
     "start": "node packages/server/dist/index.js",
     "test": "npm run test -w @tcd/server",
+    "local": "node scripts/local.mjs",
+    "e2e": "npm run build && node e2e/run.mjs",
+    "e2e:all": "npm run build && node e2e/run.mjs --players all --games 2 && node e2e/tabs.mjs && node e2e/local.mjs --seats 5 && node e2e/mobile.mjs",
+    "check": "npm run typecheck && npm test && npm run e2e:all",
     "typecheck": "tsc -p packages/shared && tsc -p packages/server && tsc -p packages/client"
   },
   "devDependencies": {

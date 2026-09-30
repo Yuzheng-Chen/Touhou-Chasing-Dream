@@ -23,7 +23,13 @@ interface Member {
   isBot: boolean;
 }
 
-const BOT_NAMES = ['灵梦', '魔理沙', '咲夜', '妖梦', '早苗', '射命丸', '恋恋', '芙兰', '帕秋莉', '铃仙'];
+/** Test/ops knobs (see CLAUDE.md): skip cosmetic pauses, override the default decision time limit. */
+const TEST_FAST = process.env.TCD_TEST_FAST === '1';
+const DEFAULT_TIMEOUT = process.env.TCD_PROMPT_TIMEOUT !== undefined ? Number(process.env.TCD_PROMPT_TIMEOUT) : DEFAULT_SETTINGS.promptTimeout;
+/** A human who stays disconnected this long is handed to a bot (托管). */
+const OFFLINE_AUTO_MS = Number(process.env.TCD_OFFLINE_AUTO_MS ?? 25_000);
+
+const BOT_NAMES =['灵梦', '魔理沙', '咲夜', '妖梦', '早苗', '射命丸', '恋恋', '芙兰', '帕秋莉', '铃仙'];
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_IDLE_MS = 30 * 60_000;
 
@@ -32,7 +38,7 @@ const clean = (s: unknown, max: number) => String(s ?? '').replace(/[\u0000-\u00
 
 class Room {
   members: Member[] = [];
-  settings: RoomSettings = { ...DEFAULT_SETTINGS };
+  settings: RoomSettings = { ...DEFAULT_SETTINGS, promptTimeout: DEFAULT_TIMEOUT };
   status: RoomView['status'] = 'lobby';
   game: Game | null = null;
   chat: ChatMessage[] = [];
@@ -78,6 +84,7 @@ class Room {
       promptTimeout: this.settings.promptTimeout * 1000,
       botDelay: this.settings.botDelay,
       roleChoices: this.settings.roleChoices,
+      fast: TEST_FAST,
     }, () => this.broadcastGame());
     this.game = game;
     this.status = 'playing';
@@ -153,6 +160,8 @@ export class RoomHub {
       const r = room();
       const m = r?.members.find((x) => x.id === s!.playerId);
       if (m && r?.status === 'lobby') m.name = s.name;
+      // Welcome back: a bot that was covering for you steps aside.
+      if (m && r?.game) r.game.setAuto(m.id, false);
       ack({ ok: true, data: { playerId: s.playerId, roomId: s.roomId } });
       if (r) {
         r.broadcastRoom();
@@ -271,15 +280,30 @@ export class RoomHub {
     sock.on('game:answer', ({ promptId, value }) => {
       const r = room();
       if (!r?.game || !session) return;
-      if (!r.game.answer(session.playerId, String(promptId), value)) {
-        sock.emit('toast', { text: '该操作已失效', tone: 'bad' });
+      const pid = String(promptId);
+      const current = r.game.promptFor(session.playerId);
+      // A stale prompt (double click, answer raced with a timeout) is silently ignored;
+      // only an invalid answer to the *current* prompt deserves feedback.
+      if (!r.game.answer(session.playerId, pid, value) && current?.id === pid) {
+        sock.emit('toast', { text: '这个选择无效，请重试', tone: 'bad' });
       }
     });
 
+    sock.on('game:resume', () => {
+      const r = room();
+      if (r?.game && session && r.members.some((m) => m.id === session!.playerId)) r.game.setAuto(session.playerId, false);
+    });
+
+    // Simple flood guard: at most 6 chat messages per 5 s per connection.
+    const chatTimes: number[] = [];
     sock.on('chat:send', ({ text }) => {
       const r = room();
       text = clean(text, 200);
       if (!r || !session || !text) return;
+      const now = Date.now();
+      while (chatTimes.length && now - chatTimes[0] > 5000) chatTimes.shift();
+      if (chatTimes.length >= 6) return void sock.emit('toast', { text: '发言太快了，稍等一下', tone: 'bad' });
+      chatTimes.push(now);
       const msg: ChatMessage = { id: rid(8), at: Date.now(), fromId: session.playerId, fromName: session.name, text };
       r.chat.push(msg);
       if (r.chat.length > 200) r.chat.shift();
@@ -291,12 +315,19 @@ export class RoomHub {
       session.sockets.delete(sock.id);
       const r = room();
       if (!r) return;
-      // In the lobby, a player who fully disconnects frees their seat after a grace period.
-      if (r.status === 'lobby' && !this.online(session.playerId)) {
-        const s = session;
-        setTimeout(() => {
-          if (!this.online(s.playerId) && s.roomId === r.id && r.status === 'lobby') this.leave(s);
-        }, 45_000);
+      const s = session;
+      if (!this.online(s.playerId)) {
+        if (r.status === 'lobby') {
+          // A player who fully disconnects frees their seat after a grace period.
+          setTimeout(() => {
+            if (!this.online(s.playerId) && s.roomId === r.id && r.status === 'lobby') this.leave(s);
+          }, 45_000);
+        } else if (r.status === 'playing' && r.members.some((m) => m.id === s.playerId)) {
+          // Mid-game: a bot covers for them if they stay away, so the table never stalls.
+          setTimeout(() => {
+            if (!this.online(s.playerId) && r.status === 'playing') r.game?.setAuto(s.playerId, true);
+          }, OFFLINE_AUTO_MS);
+        }
       }
       r.broadcastRoom();
       r.broadcastGame();

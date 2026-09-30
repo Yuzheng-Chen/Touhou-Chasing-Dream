@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { YinYang } from '../cards/Card';
 import { request } from '../net';
 import { useStore } from '../store';
+import { MuteButton } from '../ui/MuteButton';
 import './screens.css';
 
 export function Home() {
@@ -123,6 +124,7 @@ export function Home() {
         <div className="home__links">
           <button className="btn btn--ghost btn--sm" onClick={() => setOverlay('rules')}>📜 规则速览</button>
           <button className="btn btn--ghost btn--sm" onClick={() => setOverlay('gallery')}>🎴 卡牌图鉴</button>
+          <MuteButton />
         </div>
         {!connected && <p className="home__status">正在连接服务器…</p>}
       </motion.main>

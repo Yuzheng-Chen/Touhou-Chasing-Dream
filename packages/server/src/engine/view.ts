@@ -14,6 +14,7 @@ export function buildView(g: Game, viewerId: string | null, connected: (id: stri
     seat: p.seat,
     isBot: p.isBot,
     connected: p.isBot || connected(p.id),
+    auto: p.auto,
     influence: p.influence,
     influenceCap: g.influenceCap(p),
     handCount: p.hand.length,

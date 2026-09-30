@@ -1,6 +1,10 @@
 /**
  * Headless bot-vs-bot simulator for balance checks and engine fuzzing.
  *   npm run sim -w @tcd/server -- [games=50] [players=5]
+ *
+ * Reports: game length, how often a game has a winner, how often a faction scores, and per-role
+ * victory-point rates (2 = won the game, 1 = scored). Bots are heuristic, not optimal — use the
+ * numbers to spot roles that are broken or never win, not as a precise balance measure.
  */
 import { roleDef } from '@tcd/shared';
 import { Game } from './engine/Game.js';
@@ -8,8 +12,10 @@ import { runGame } from './engine/flow.js';
 
 const games = Number(process.argv[2] ?? 50);
 const players = Number(process.argv[3] ?? 5);
-const wins = new Map<string, { played: number; won: number }>();
+const roles = new Map<string, { played: number; won: number; scored: number }>();
 let rounds = 0;
+let noWinner = 0;
+let scoring = 0;
 const t0 = Date.now();
 
 for (let i = 0; i < games; i++) {
@@ -18,18 +24,26 @@ for (let i = 0; i < games; i++) {
   const g0 = Date.now();
   await runGame(g);
   rounds += g.s.round;
-  for (const l of g.s.result!.lines) {
-    const w = wins.get(l.roleId) ?? { played: 0, won: 0 };
+  const res = g.s.result!;
+  if (!res.winnerIds.length) noWinner++;
+  for (const l of res.lines) {
+    const w = roles.get(l.roleId) ?? { played: 0, won: 0, scored: 0 };
     w.played++;
-    if (l.victoryPoints === 2) w.won++;
-    wins.set(l.roleId, w);
+    if (res.winnerIds.includes(l.playerId)) w.won++;
+    if (l.total > 0) {
+      w.scored++;
+      scoring++;
+    }
+    roles.set(l.roleId, w);
   }
   if (Date.now() - g0 > 3000) console.warn(`slow game seed=${g.s.seed}: ${Date.now() - g0}ms, ${g.s.logSeq} log lines`);
 }
 
-console.log(`${games} games × ${players}p in ${((Date.now() - t0) / 1000).toFixed(1)}s, avg ${(rounds / games).toFixed(1)} rounds`);
+const pct = (a: number, b: number) => `${((100 * a) / b).toFixed(0)}%`;
+console.log(`${games} games × ${players}p in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+console.log(`avg rounds ${(rounds / games).toFixed(1)} · games without a winner ${pct(noWinner, games)} · players scoring ${pct(scoring, games * players)}`);
 console.table(
-  [...wins.entries()]
-    .map(([id, w]) => ({ role: roleDef(id).name, played: w.played, winRate: `${((100 * w.won) / w.played).toFixed(0)}%` }))
-    .sort((a, b) => parseInt(b.winRate) - parseInt(a.winRate)),
+  [...roles.entries()]
+    .map(([id, w]) => ({ role: roleDef(id).name, played: w.played, wins: pct(w.won, w.played), scoring: pct(w.scored, w.played) }))
+    .sort((a, b) => parseInt(b.wins) - parseInt(a.wins)),
 );

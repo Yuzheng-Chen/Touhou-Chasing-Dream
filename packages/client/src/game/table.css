@@ -3,7 +3,8 @@
   position: relative;
   height: 100%;
   display: grid;
-  grid-template-rows: 56px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr); /* never let wide content (e.g. the opponent strip) widen the page */
   overflow: hidden;
 }
 .table__bg {
@@ -41,6 +42,7 @@
 
 /* ───────── Top bar ───────── */
 .topbar {
+  min-height: 56px;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -319,6 +321,12 @@
 .imeter--big .imeter__num { font-size: 28px; min-width: 40px; }
 .imeter--big .imeter__pips i { width: 10px; height: 16px; }
 
+.imeter > .pulse {
+  left: auto;
+  right: 0;
+  top: -3px;
+  margin: 0;
+}
 .pulse {
   position: absolute;
   left: 100%;
@@ -409,7 +417,7 @@
   justify-content: center;
   gap: 14px;
   min-height: 0;
-  padding: 8px 0;
+  padding: 8px 0 44px; /* bottom room for the decision panel that floats above your hand */
 }
 .center__row {
   display: flex;
@@ -437,7 +445,7 @@
 }
 .zone:hover .card { transform: translateY(-3px); }
 .deck .card--sm,
-.zone .card--sm { --w: 70px; }
+.zone .card--sm { --w: clamp(48px, 8.5vh, 70px); }
 .deck__stack {
   position: relative;
   filter: drop-shadow(calc(var(--depth) * 1px) calc(var(--depth) * 1.5px) 0 rgba(0, 0, 0, 0.45));
@@ -451,7 +459,7 @@
 }
 .deck__label b { color: var(--text); }
 .zone__empty {
-  width: 70px;
+  width: clamp(48px, 8.5vh, 70px);
   aspect-ratio: 5 / 7;
   border-radius: 6px;
   border: 1px dashed rgba(255, 255, 255, 0.18);
@@ -463,10 +471,10 @@
   gap: 6px;
   perspective: 800px;
 }
-.official .card--md { --w: 132px; box-shadow: 0 0 0 1px rgba(243, 213, 138, 0.4), 0 0 30px rgba(216, 178, 90, 0.35), var(--shadow); }
+.official .card--md { --w: clamp(92px, 16vh, 132px); box-shadow: 0 0 0 1px rgba(243, 213, 138, 0.4), 0 0 30px rgba(216, 178, 90, 0.35), var(--shadow); }
 .official.is-suppressed .card { filter: grayscale(0.85) brightness(0.6); }
 .official__empty {
-  width: 132px;
+  width: clamp(92px, 16vh, 132px);
   aspect-ratio: 5 / 7;
   display: grid;
   place-items: center;
@@ -963,13 +971,13 @@
   display: grid;
   grid-template-columns: 36px auto 1fr 90px 70px;
   align-items: center;
-  gap: 16px;
-  padding: 10px 16px;
+  gap: 14px;
+  padding: 6px 16px;
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--hairline);
 }
-.rline .card--sm { --w: 56px; }
+.rline .card--sm { --w: 44px; }
 .rline.is-winner {
   background: linear-gradient(90deg, rgba(216, 178, 90, 0.2), rgba(216, 178, 90, 0.04));
   border-color: rgba(216, 178, 90, 0.5);
@@ -1005,10 +1013,13 @@
     bottom: 12px;
     width: min(340px, 90vw);
     z-index: 550;
-    transform: translateX(110%);
-    transition: transform 0.3s var(--ease-out);
+    /* Hidden by fading, not by parking it off-screen (off-screen fixed boxes widen the page on mobile). */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(10px);
+    transition: opacity 0.2s, transform 0.3s var(--ease-out), visibility 0.2s;
   }
-  .side-open .side { transform: none; }
+  .side-open .side { opacity: 1; visibility: visible; transform: none; }
   .topbar__sidetoggle { display: inline-flex; }
   .phases li { padding: 3px 8px; }
   .results__reopen { right: 20px; }
@@ -1024,4 +1035,123 @@
   .decks .deck:nth-child(3), .zones .zone:nth-child(1), .zones .zone:nth-child(2) { display: none; }
   .rline { grid-template-columns: 28px auto 1fr 56px; }
   .rline__vp { display: none; }
+}
+
+/* ───────── 托管 banner ───────── */
+.autobar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 6px 8px 6px 16px;
+  border-radius: 999px;
+  background: rgba(20, 18, 37, 0.95);
+  border: 1px solid rgba(239, 107, 107, 0.5);
+  font-size: 13px;
+}
+
+/* ───────── Many players: wrap opponents into compact rows ───────── */
+.opponents { flex-wrap: wrap; }
+.opponents--dense { gap: 8px; }
+.table--dense .official .card--md { --w: clamp(80px, 12vh, 104px); }
+.table--dense .official__empty { width: clamp(80px, 12vh, 104px); }
+.table--dense .deck .card--sm,
+.table--dense .zone .card--sm { --w: clamp(40px, 6.5vh, 56px); }
+.table--dense .center { gap: 8px; }
+.opponents--dense .seat {
+  width: calc((100% - 8px * (var(--cols) - 1)) / var(--cols));
+  min-width: 150px;
+  margin-top: 0;
+  padding: 7px 8px;
+  gap: 8px;
+}
+.opponents--dense .seat__role .card--sm { --w: 42px; }
+.opponents--dense .seat__stats { gap: 4px; }
+.opponents--dense .imeter__pips i { width: 5px; height: 9px; }
+.opponents--dense .imeter__num { font-size: 15px; }
+
+/* ───────── Phones & short landscape screens ─────────
+   The desktop layout is a fixed-height table; here the page scrolls instead, opponents become a
+   swipeable strip, and decisions appear in a sheet pinned under the top bar. */
+.topbar__phase { display: none; }
+@media (max-width: 760px), (max-height: 560px) {
+  html, body, #root { height: auto; min-height: 100%; }
+  body { overflow: auto; }
+  .table { height: auto; min-height: 100dvh; overflow: visible; grid-template-rows: auto 1fr; }
+  .table__bg { position: fixed; }
+  .topbar {
+    position: sticky; top: 0; z-index: 300;
+    grid-template-columns: 1fr auto; gap: 4px 10px; padding: 6px 10px;
+    background: rgba(12, 11, 23, 0.96); min-height: 0;
+  }
+  .topbar__brand, .topbar__progress, .phases, .topbar__hide-sm { display: none; }
+  .topbar__center { display: flex; grid-column: 1 / -1; order: 3; justify-content: space-between; gap: 8px; }
+  .topbar__phase { display: inline; color: var(--gold-bright); font-size: 13px; }
+  .table__grid { display: block; padding: 0 8px 28px; }
+  .table__main { display: flex; flex-direction: column; gap: 10px; }
+
+  .opponents {
+    flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; padding: 8px 2px 6px; min-height: 0;
+    scroll-snap-type: x proximity;
+  }
+  .table .opponents .seat { flex: 0 0 172px; width: 172px; min-width: 0; margin-top: 0; padding: 8px; gap: 8px; scroll-snap-align: start; }
+  .table .opponents .seat__role .card--sm { --w: 44px; }
+
+  .center { padding: 2px 0 6px; gap: 10px; }
+  .center__row { gap: 14px; flex-wrap: wrap; }
+  .official .card--md, .table--dense .official .card--md { --w: 88px; }
+  .official__empty { width: 88px; }
+  .deck .card--sm, .zone .card--sm, .table--dense .deck .card--sm, .table--dense .zone .card--sm { --w: 44px; }
+  .zone__empty { width: 44px; }
+  .cmeter__value b { font-size: 24px; }
+
+  .myarea { padding: 0; }
+  .myarea__row { grid-template-columns: 1fr; gap: 10px; padding: 10px; }
+  .myarea__self .card { display: block; }
+  .myarea__role .card--md { --w: 64px; }
+  .myarea__stats { min-width: 0; flex: 1; }
+  .myarea__events { justify-content: flex-start; }
+  .evslot .card--md { --w: 64px; }
+  .evslot .card--sm { --w: 52px; }
+  .hand { min-height: 150px; padding-top: 14px; overflow-x: auto; justify-content: flex-start; }
+  .hand .card--md { --w: 92px; }
+  .hand__card:hover .card { transform: none; }
+  .playmenu { min-width: 200px; }
+
+  .myarea__prompt {
+    position: fixed; left: 8px; right: 8px; top: 92px; bottom: auto; transform: none; width: auto;
+    max-height: 64vh; overflow-y: auto; z-index: 350;
+  }
+  .myarea__prompt { overflow-x: hidden; }
+  .decide, .decide--turn { width: 100%; max-width: 100%; padding: 12px; }
+  .decide__hint { flex-basis: 100%; margin-right: 0; }
+  .decide__row { justify-content: flex-start; }
+  .option { flex-basis: 100%; }
+  .waiting { max-width: 100%; }
+
+  .side { top: 92px; }
+  .fx__play .card--lg { --w: 150px; }
+  .fx__banner .card { --w: 150px; }
+  .fx__bannertext span { font-size: 22px; letter-spacing: 0.08em; }
+  .fx__ribbon { height: 120px; margin-top: -60px; }
+  .fx__banner { gap: 14px; }
+
+  .rolepick { justify-content: flex-start; overflow-y: auto; padding: 20px 12px 40px; }
+  .rolepick__title { font-size: 34px; }
+  .rolepick__cards .card--xl { --w: min(300px, 82vw); }
+  .sheet-backdrop { padding: 8px; }
+  .results__sheet { padding: 16px; }
+  .results__title { font-size: 38px; }
+}
+
+@media (max-width: 560px) {
+  .lobby { padding: 10px; }
+  .lobby__main { padding: 16px; gap: 16px; }
+  .lobby__head { flex-wrap: wrap; }
+  .lobby__code { font-size: 38px; flex-wrap: wrap; gap: 6px; }
+  .seats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .seat-slot { min-height: 168px; padding: 12px 6px; }
+  .settings { gap: 14px; }
+  .setting { min-width: 0; flex: 1 1 100%; }
+  .lobby__foot .btn--lg { width: 100%; }
 }

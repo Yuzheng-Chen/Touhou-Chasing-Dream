@@ -2,7 +2,7 @@ import {
   ACTION_CATEGORY_LABEL, EVENT_TOPIC_COLOR, FOCUS_LABEL, STANCE_LABEL, cardArtUrl, cardDef,
   type CardDef, type CardKind,
 } from '@tcd/shared';
-import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+import { useRef, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { useStore } from '../store';
 import './card.css';
 
@@ -64,6 +64,13 @@ interface CardProps {
 export function Card({ id, size = 'md', text, selected, playable, dim, onClick, className = '', style, noPreview, children }: CardProps) {
   const d = cardDef(id);
   const setHover = useStore((s) => s.setHover);
+  // Touch: hover doesn't exist, so press-and-hold previews the card (and swallows the tap that follows).
+  const press = useRef<{ timer?: number; fired: boolean }>({ fired: false });
+  const canHover = () => window.matchMedia('(hover: hover)').matches;
+  const endPress = () => {
+    clearTimeout(press.current.timer);
+    if (press.current.fired) setHover(null);
+  };
   const showText = text ?? (size === 'lg' || size === 'xl');
   const accent = cardAccent(d);
   const cls = [
@@ -75,9 +82,20 @@ export function Card({ id, size = 'md', text, selected, playable, dim, onClick, 
     <div
       className={cls}
       style={{ '--accent': accent, ...style } as CSSProperties}
-      onClick={onClick}
-      onMouseEnter={noPreview ? undefined : () => setHover(id)}
-      onMouseLeave={noPreview ? undefined : () => setHover(null)}
+      onClick={onClick ? (e) => {
+        if (press.current.fired) { press.current.fired = false; return; }
+        onClick(e);
+      } : undefined}
+      onMouseEnter={noPreview ? undefined : () => canHover() && setHover(id)}
+      onMouseLeave={noPreview ? undefined : () => canHover() && setHover(null)}
+      onPointerDown={noPreview ? undefined : (e: PointerEvent) => {
+        if (e.pointerType !== 'touch') return;
+        press.current.fired = false;
+        press.current.timer = window.setTimeout(() => { press.current.fired = true; setHover(id); }, 420);
+      }}
+      onPointerUp={noPreview ? undefined : endPress}
+      onPointerCancel={noPreview ? undefined : endPress}
+      onContextMenu={noPreview ? undefined : (e) => canHover() || e.preventDefault()}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => (e.key === 'Enter' || e.key === ' ') && onClick(e as unknown as MouseEvent) : undefined}

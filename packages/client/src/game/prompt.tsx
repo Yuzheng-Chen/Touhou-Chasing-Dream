@@ -97,6 +97,10 @@ export function PromptPanel() {
       <motion.div
         key={p.id}
         className={`decide decide--${p.kind}`}
+        data-prompt-id={p.id}
+        data-kind={p.kind}
+        data-min={'min' in p ? p.min : undefined}
+        data-max={'max' in p ? p.max : undefined}
         initial={{ opacity: 0, y: 14, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 8 }}
@@ -283,7 +287,7 @@ export function RolePicker() {
   if (game.phase !== 'roleSelect') return null;
   const choosing = p?.kind === 'choice';
   return (
-    <motion.div className="rolepick" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="rolepick" data-prompt-id={p?.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <h2 className="rolepick__title">{choosing ? '选择你的角色' : '等待其他玩家选择角色…'}</h2>
       <p className="rolepick__sub">角色的阵营决定胜利条件。在发动主动技能之前，请对其他玩家保密。</p>
       <div className="rolepick__cards">

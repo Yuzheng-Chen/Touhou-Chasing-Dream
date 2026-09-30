@@ -23,22 +23,36 @@ const safeStorage = {
   },
 };
 
+const params = new URLSearchParams(location.search);
+
+/**
+ * Local multi-seat testing: `?as=NAME` gives this tab its own identity (token + nickname) even though
+ * every tab of one browser shares localStorage. `/local` uses it to host several seats side by side.
+ */
+export const SEAT = params.get('as');
+const ns = SEAT ? `.${SEAT}` : '';
+
 /** Stable per-browser secret; the server maps it to your player id so you can reconnect. */
 export function sessionToken(): string {
-  let t = safeStorage.get('tcd.token');
+  let t = safeStorage.get(`tcd.token${ns}`);
   if (!t || t.length < 16) {
     t = crypto.randomUUID?.() ?? Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    safeStorage.set('tcd.token', t);
+    safeStorage.set(`tcd.token${ns}`, t);
   }
   return t;
 }
 
 export function savedName(): string {
-  return safeStorage.get('tcd.name') ?? '';
+  return params.get('name') || safeStorage.get(`tcd.name${ns}`) || '';
 }
 export function saveName(n: string) {
-  safeStorage.set('tcd.name', n);
+  safeStorage.set(`tcd.name${ns}`, n);
 }
+
+export const prefs = {
+  get: (k: string) => safeStorage.get(`tcd.pref.${k}`),
+  set: (k: string, v: string) => safeStorage.set(`tcd.pref.${k}`, v),
+};
 
 /** Data type carried by an event's ack callback. */
 type AckData<E extends keyof ClientToServer> =

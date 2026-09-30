@@ -9,6 +9,13 @@
 .card-preview .card {
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(243, 213, 138, 0.4);
 }
+.card-preview--touch {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 5, 14, 0.72);
+}
+.card-preview--touch .card { --w: min(300px, 78vw); }
 
 .toasts {
   position: fixed;

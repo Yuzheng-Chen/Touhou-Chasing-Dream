@@ -2,6 +2,7 @@ import { factionLabel } from '@tcd/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Card, CardBack } from '../cards/Card';
+import { socket } from '../net';
 import { selectMe, useStore } from '../store';
 import { playerColor } from '../ui/colors';
 import { InfluenceMeter } from './meters';
@@ -18,6 +19,12 @@ export function MyArea() {
   return (
     <div className={`myarea ${isTurn ? 'is-turn' : ''}`} style={{ '--seat': playerColor(meView.seat) } as CSSProperties}>
       <div className="myarea__prompt">
+        {meView.auto && (
+          <div className="autobar">
+            <span>🤖 你的座位正由 AI 托管（长时间未操作或掉线）</span>
+            <button className="btn btn--gold btn--sm" onClick={() => socket.emit('game:resume')}>取消托管</button>
+          </div>
+        )}
         <PromptPanel />
       </div>
       <div className="myarea__row">
@@ -74,11 +81,16 @@ function Hand() {
   const ui = usePromptUi();
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
+  const [cardW, setCardW] = useState(124);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    const ro = new ResizeObserver(() => {
+      setWidth(el.clientWidth);
+      const c = el.querySelector('.card');
+      if (c) setCardW((c as HTMLElement).offsetWidth || 124); // CSS sets the size (smaller on phones)
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -90,7 +102,6 @@ function Hand() {
     return () => window.removeEventListener('click', close);
   }, [ui.menuUid]);
 
-  const cardW = 124;
   const n = hand.length;
   const gap = n > 1 ? Math.min(12, (width - cardW) / (n - 1) - cardW) : 0;
   const p = ui.prompt;

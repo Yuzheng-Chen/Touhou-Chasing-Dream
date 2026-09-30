@@ -41,6 +41,10 @@ export interface PlayerState {
   pendingGift: CardInstance[];
   /** Officials already chosen with 极限打分. */
   maxScoreUsed: string[];
+  /** 托管: a bot answers for this (human) player. Cleared when they act again. */
+  auto: boolean;
+  /** Consecutive prompts that timed out. */
+  timeouts: number;
 }
 
 /** Per-turn bookkeeping. Reset at every turn start. */
