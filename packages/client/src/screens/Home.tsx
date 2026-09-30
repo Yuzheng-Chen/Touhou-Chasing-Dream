@@ -1,0 +1,131 @@
+import type { RoomSummary } from '@tcd/shared';
+import { motion } from 'motion/react';
+import { useEffect, useState } from 'react';
+import { YinYang } from '../cards/Card';
+import { request } from '../net';
+import { useStore } from '../store';
+import './screens.css';
+
+export function Home() {
+  const { name, setName, toast, setOverlay, connected } = useStore();
+  const [draft, setDraft] = useState(name);
+  const [code, setCode] = useState(() => location.pathname.match(/^\/r\/([A-Z0-9]{4})$/i)?.[1]?.toUpperCase() ?? '');
+  const [rooms, setRooms] = useState<RoomSummary[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!connected) return;
+    const load = () => request('room:list').then(setRooms).catch(() => {});
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [connected]);
+
+  const commitName = () => {
+    const n = draft.trim().slice(0, 16);
+    if (!n) {
+      toast('先起一个昵称吧', 'bad');
+      return false;
+    }
+    if (n !== name) setName(n);
+    return true;
+  };
+
+  const create = async () => {
+    if (!commitName()) return;
+    setBusy(true);
+    try {
+      await request('room:create');
+    } catch (e) {
+      toast(String(e), 'bad');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const join = async (id = code) => {
+    if (!commitName()) return;
+    if (!/^[A-Z0-9]{4}$/i.test(id)) return toast('请输入 4 位房间码', 'bad');
+    setBusy(true);
+    try {
+      await request('room:join', { roomId: id.toUpperCase() });
+    } catch (e) {
+      toast(String(e), 'bad');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="home">
+      <div className="home__bg" />
+      <div className="home__veil" />
+      <motion.header
+        className="home__hero"
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <YinYang className="home__orb" size={64} />
+        <h1 className="home__title">逐梦东方圈</h1>
+        <p className="home__subtitle">Touhou · Chasing Dream</p>
+        <p className="home__tagline">3–8 人隐藏身份卡牌游戏。繁荣还是小众？社群还是个人？<br />在同人圈的风云变幻里，守护你心中的东方。</p>
+      </motion.header>
+
+      <motion.main
+        className="home__card panel"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.9, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <label className="field">
+          <span className="label">昵称</span>
+          <input
+            className="input"
+            value={draft}
+            maxLength={16}
+            placeholder="你的名字"
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitName}
+          />
+        </label>
+
+        <button className="btn btn--primary btn--lg home__create" onClick={create} disabled={busy || !connected}>
+          创建房间
+        </button>
+
+        <div className="home__or"><span>或加入好友的房间</span></div>
+
+        <form className="home__join" onSubmit={(e) => { e.preventDefault(); join(); }}>
+          <input
+            className="input home__code"
+            value={code}
+            maxLength={4}
+            placeholder="房间码"
+            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+          />
+          <button className="btn btn--gold btn--lg" disabled={busy || !connected || code.length !== 4}>加入</button>
+        </form>
+
+        {rooms.length > 0 && (
+          <div className="home__rooms">
+            <span className="label">正在进行的房间</span>
+            {rooms.map((r) => (
+              <button key={r.id} className="room-row" onClick={() => join(r.id)}>
+                <b className="room-row__code">{r.id}</b>
+                <span>{r.hostName} 的房间</span>
+                <span className="room-row__meta">{r.players}/8 · {r.status === 'lobby' ? '等待中' : r.status === 'playing' ? '游戏中（观战）' : '已结束'}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="home__links">
+          <button className="btn btn--ghost btn--sm" onClick={() => setOverlay('rules')}>📜 规则速览</button>
+          <button className="btn btn--ghost btn--sm" onClick={() => setOverlay('gallery')}>🎴 卡牌图鉴</button>
+        </div>
+        {!connected && <p className="home__status">正在连接服务器…</p>}
+      </motion.main>
+    </div>
+  );
+}

@@ -1,0 +1,26 @@
+{
+  "name": "touhou-chasing-dream",
+  "private": true,
+  "version": "0.1.0",
+  "description": "逐梦东方圈 — online multiplayer edition",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c magenta,cyan \"npm run dev -w @tcd/server\" \"npm run dev -w @tcd/client\"",
+    "build": "npm run build -w @tcd/client && npm run build -w @tcd/server",
+    "start": "node packages/server/dist/index.js",
+    "test": "npm run test -w @tcd/server",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/server && tsc -p packages/client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

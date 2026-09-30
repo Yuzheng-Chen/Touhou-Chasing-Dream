@@ -1,0 +1,20 @@
+# Alternative to Docker: run with systemd behind nginx/Caddy.
+#   npm ci && npm run build
+#   sudo cp deploy/touhou-chasing-dream.service /etc/systemd/system/
+#   sudo systemctl enable --now touhou-chasing-dream
+[Unit]
+Description=Touhou Chasing Dream game server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/touhou-chasing-dream
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStart=/usr/bin/node packages/server/dist/index.js
+Restart=always
+RestartSec=3
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+**/node_modules
+**/dist
+.git
+tools
+*.pdf
+*.md
+admin_account_use_when_install.txt

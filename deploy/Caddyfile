@@ -1,0 +1,5 @@
+{$DOMAIN} {
+	encode zstd gzip
+	# WebSockets (socket.io) are proxied transparently.
+	reverse_proxy app:3000
+}

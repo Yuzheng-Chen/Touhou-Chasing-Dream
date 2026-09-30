@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.env
+admin_account_use_when_install.txt
+tools/art/out/
+tools/art/raw/
+.DS_Store
