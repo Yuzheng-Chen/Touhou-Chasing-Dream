@@ -159,6 +159,8 @@ export interface PlayerView {
   connected: boolean;
   /** 托管: a bot is answering for this human. */
   auto: boolean;
+  /** Round-trip time to the server in ms (null = unknown / bot). */
+  ping: number | null;
   influence: number;
   influenceCap: number;
   handCount: number;
@@ -237,9 +239,23 @@ export interface RoomSettings {
   promptTimeout: number;
   /** Bot think time in ms, so humans can follow what happens. */
   botDelay: number;
+  /** Game length in rounds (= officials in the discard pile that trigger the final settlement). 0 = rulebook default, 12 − players. */
+  rounds: number;
+  /** Action cards each player starts with (rulebook: 2). */
+  startingHand: number;
+  /** Who takes the first turn (rulebook: a die roll). */
+  firstPlayer: 'random' | 'host';
+  /** Offer every player at least one 繁荣 and one 小众 role, as the rulebook suggests. */
+  balancedRoles: boolean;
+  /** Let people who are not seated watch a running game. */
+  allowSpectators: boolean;
 }
 
-export const DEFAULT_SETTINGS: RoomSettings = { roleChoices: 3, promptTimeout: 60, botDelay: 900 };
+export const DEFAULT_SETTINGS: RoomSettings = {
+  roleChoices: 3, promptTimeout: 60, botDelay: 900,
+  rounds: 0, startingHand: 2, firstPlayer: 'random', balancedRoles: true, allowSpectators: true,
+};
+export const SETTING_LIMITS = { roleChoices: [1, 6], promptTimeout: [0, 300], botDelay: [200, 2400], rounds: [2, 12], startingHand: [1, 5] } as const;
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 8;
 
@@ -248,6 +264,8 @@ export interface RoomMember {
   name: string;
   isBot: boolean;
   connected: boolean;
+  /** Round-trip time to the server in ms (null = unknown / bot). */
+  ping: number | null;
 }
 
 export interface RoomView {
@@ -257,6 +275,8 @@ export interface RoomView {
   settings: RoomSettings;
   status: 'lobby' | 'playing' | 'finished';
   youId: string;
+  /** This room is a coached tutorial game. */
+  tutorial: boolean;
 }
 
 export interface ChatMessage {
@@ -293,6 +313,14 @@ export interface ClientToServer {
   /** Take your seat back from 托管. */
   'game:resume': () => void;
   'chat:send': (p: { text: string }) => void;
+  /** Latency probe: the server just calls back. */
+  'net:ping': (ack: () => void) => void;
+  /** Client reports its smoothed round-trip time so everyone can see it. */
+  'net:rtt': (p: { ms: number }) => void;
+  /** Quick reaction shown above your seat. */
+  'game:emote': (p: { emote: string }) => void;
+  /** Start a coached tutorial game (you + two AI). */
+  'room:tutorial': (ack: Ack<{ roomId: string }>) => void;
 }
 
 export interface ServerToClient {
@@ -300,4 +328,5 @@ export interface ServerToClient {
   'game:state': (game: GameView | null) => void;
   'chat:message': (msg: ChatMessage) => void;
   'toast': (p: { text: string; tone?: Tone }) => void;
+  'game:emote': (p: { fromId: string; emote: string; at: number }) => void;
 }

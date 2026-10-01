@@ -148,13 +148,22 @@
 .seat.is-pickable {
   cursor: pointer;
   box-shadow: 0 0 0 2px var(--gold-bright), 0 0 24px rgba(243, 213, 138, 0.45);
+}
+.seat.is-pickable::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px var(--gold-bright), 0 0 36px rgba(243, 213, 138, 0.75);
+  opacity: 0;
+  pointer-events: none;
   animation: breathe 1.6s ease-in-out infinite;
 }
 .seat.is-pickable:hover { transform: translateY(-3px); }
 .seat.is-picked { box-shadow: 0 0 0 3px var(--vermilion-soft), 0 0 30px rgba(240, 106, 93, 0.6); }
 .seat.is-offline { opacity: 0.6; }
 @keyframes breathe {
-  50% { box-shadow: 0 0 0 2px var(--gold-bright), 0 0 36px rgba(243, 213, 138, 0.7); }
+  50% { opacity: 1; }
 }
 .seat__role {
   position: relative;
@@ -658,7 +667,6 @@
   background: linear-gradient(180deg, rgba(40, 35, 72, 0.97), rgba(24, 21, 44, 0.97));
   border: 1px solid var(--panel-border);
   box-shadow: var(--glow-gold), var(--shadow-lg);
-  backdrop-filter: blur(12px);
 }
 .decide--turn { width: auto; padding: 10px 14px; }
 .decide__head {
@@ -930,7 +938,6 @@
   gap: 16px;
   padding: 24px;
   background: radial-gradient(ellipse at center, rgba(33, 29, 59, 0.9), rgba(8, 7, 16, 0.97));
-  backdrop-filter: blur(8px);
 }
 .rolepick__title {
   margin: 0;
@@ -1155,3 +1162,40 @@
   .setting { min-width: 0; flex: 1 1 100%; }
   .lobby__foot .btn--lg { width: 100%; }
 }
+
+/* ───────── Emotes ───────── */
+.emote-bubble {
+  position: absolute;
+  z-index: 30;
+  top: -22px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50% 50% 50% 8px;
+  background: rgba(251, 248, 241, 0.97);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  font-size: 24px;
+  pointer-events: none;
+}
+.myarea__name .emote-bubble { top: -34px; left: 90px; right: auto; }
+.myarea__name { position: relative; }
+.emotepicker { position: relative; display: inline-flex; }
+.emotepicker__pop {
+  position: absolute;
+  z-index: 60;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 40px);
+  gap: 4px;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(20, 18, 37, 0.98);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-lg);
+}
+.emotepicker__pop button { width: 40px; height: 40px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.05); font-size: 22px; transition: transform 0.15s, background 0.15s; }
+.emotepicker__pop button:hover { transform: scale(1.15); background: rgba(216, 178, 90, 0.2); }
+.seat__signal { margin-left: auto; }

@@ -67,7 +67,7 @@ export const ACTION_CATEGORY_LABEL: Record<ActionCardDef['category'], string> = 
   judge: '判定',
   group: '群体',
   delay: '延时',
-  eventOp: '事件',
+  eventOp: '改事件',
   reaction: '响应',
   special: '特殊',
 };

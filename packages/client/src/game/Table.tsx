@@ -1,7 +1,10 @@
 import { PHASE_LABEL, type Phase } from '@tcd/shared';
 import { AnimatePresence } from 'motion/react';
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { MuteButton } from '../ui/MuteButton';
+import { Signal } from '../ui/Signal';
+import { Coach } from './Coach';
+import { Shortcuts } from './Shortcuts';
 import { socket } from '../net';
 import { useStore } from '../store';
 import { playerColor } from '../ui/colors';
@@ -18,6 +21,7 @@ const TURN_PHASES: Phase[] = ['eventDraw', 'draw', 'action', 'eventResolve', 'di
 
 export function Table() {
   const game = useStore((s) => s.game)!;
+  const room = useStore((s) => s.room);
   const meId = game.me?.id;
   const [sideOpen, setSideOpen] = useState(false);
 
@@ -27,6 +31,14 @@ export function Table() {
   const opponents = Array.from({ length: n }, (_, k) => game.players[(myIdx + k + (meId ? 1 : 0)) % n]).slice(0, meId ? n - 1 : n);
 
   const dense = opponents.length >= 6;
+  const shake = useStore((s) => s.shake);
+  const [shaking, setShaking] = useState(false);
+  useEffect(() => {
+    if (!shake) return;
+    setShaking(true);
+    const t = setTimeout(() => setShaking(false), 480);
+    return () => clearTimeout(t);
+  }, [shake]);
 
   return (
     <PromptProvider>
@@ -34,7 +46,7 @@ export function Table() {
         <div className="table__bg" />
         <TopBar onToggleSide={() => setSideOpen((v) => !v)} />
         <div className={`table__grid ${sideOpen ? 'side-open' : ''}`}>
-          <main className="table__main">
+          <main className={`table__main ${shaking ? 'is-shaking' : ''}`}>
             <div className={`opponents ${dense ? 'opponents--dense' : ''}`} style={{ '--n': opponents.length, '--cols': Math.ceil(opponents.length / 2) } as CSSProperties}>
               {opponents.map((p, i) => {
                 const t = opponents.length > 1 ? (i / (opponents.length - 1)) * 2 - 1 : 0;
@@ -46,6 +58,8 @@ export function Table() {
           </main>
           <SidePanel />
         </div>
+        <Shortcuts />
+        {room?.tutorial && <Coach />}
         <FxLayer />
         <AnimatePresence>{game.phase === 'roleSelect' && <RolePicker />}</AnimatePresence>
         {game.phase === 'finished' && <Results />}
@@ -59,6 +73,7 @@ function TopBar({ onToggleSide }: { onToggleSide: () => void }) {
   const room = useStore((s) => s.room);
   const setOverlay = useStore((s) => s.setOverlay);
   const unread = useStore((s) => s.unreadChat);
+  const ping = useStore((s) => s.ping);
   const cur = game.players.find((p) => p.id === game.currentPlayerId);
   const leave = () => {
     if (game.phase === 'finished' || confirm('确定离开游戏吗？你的座位会保留，可以用房间码重新加入。')) socket.emit('room:leave');
@@ -96,7 +111,9 @@ function TopBar({ onToggleSide }: { onToggleSide: () => void }) {
       </div>
 
       <div className="topbar__right">
+        <Signal ms={ping} />
         <MuteButton />
+        <button className="btn btn--ghost btn--sm btn--icon topbar__hide-sm" title="设置" aria-label="设置" onClick={() => setOverlay('settings')}>⚙</button>
         <button className="btn btn--ghost btn--sm topbar__hide-sm" onClick={() => setOverlay('rules')}>规则</button>
         <button className="btn btn--ghost btn--sm topbar__hide-sm" onClick={() => setOverlay('gallery')}>图鉴</button>
         <button className="btn btn--ghost btn--sm topbar__sidetoggle" onClick={onToggleSide}>

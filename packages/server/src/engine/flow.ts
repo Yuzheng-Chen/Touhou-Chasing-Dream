@@ -1,5 +1,5 @@
 import {
-  ROLE_CARDS, STARTING_HAND, actionDef, endThreshold, eventDef, roleDef,
+  ROLE_CARDS, STARTING_HAND, actionDef, eventDef, roleDef,
   type CardInstance, type TurnMove,
 } from '@tcd/shared';
 import { ACTIONS } from './actions.js';
@@ -16,7 +16,7 @@ export async function runGame(g: Game) {
   setupTable(g);
   for (;;) {
     await playRound(g);
-    if (g.s.officialDiscard.length >= endThreshold(g.players.length) || !g.s.officialDeck.length) break;
+    if (g.s.officialDiscard.length >= g.endTarget || !g.s.officialDeck.length) break;
   }
   await finalSettlement(g);
   g.s.result = scoreGame(g);
@@ -61,7 +61,7 @@ async function selectRoles(g: Game) {
   };
   for (const p of g.players) {
     const opts: string[] = [];
-    if (k >= 2) {
+    if (k >= 2 && g.opts.balancedRoles !== false) {
       for (const stance of ['prosper', 'niche'] as const) {
         const id = take((x) => roleDef(x).stance === stance);
         if (id) opts.push(id);
@@ -85,17 +85,20 @@ async function selectRoles(g: Game) {
 
 function setupTable(g: Game) {
   const n = g.players.length;
-  g.s.firstIdx = g.rng.int(n);
-  g.log(`掷骰决定先手：{p:${g.players[g.s.firstIdx].id}} 为第一名玩家`, undefined, 'major');
+  const hostIdx = g.players.findIndex((p) => p.host);
+  const hostFirst = g.opts.firstPlayer === 'host' && hostIdx >= 0;
+  g.s.firstIdx = hostFirst ? hostIdx : g.rng.int(n);
+  g.log(`${hostFirst ? '房主先手' : '掷骰决定先手'}：{p:${g.players[g.s.firstIdx].id}} 为第一名玩家`, undefined, 'major');
+  const hand = g.opts.startingHand ?? STARTING_HAND;
   for (const p of g.players) {
     const cards: CardInstance[] = [];
-    for (let i = 0; i < STARTING_HAND; i++) {
+    for (let i = 0; i < hand; i++) {
       const c = g.takeActionTop();
       if (c) cards.push(c);
     }
     p.hand.push(...cards);
   }
-  g.log(`每位玩家摸 ${STARTING_HAND} 张行动牌，游戏开始！`);
+  g.log(`每位玩家摸 ${hand} 张行动牌，游戏开始！`);
 }
 
 // ════════════════════════════════════════════════════════════════════

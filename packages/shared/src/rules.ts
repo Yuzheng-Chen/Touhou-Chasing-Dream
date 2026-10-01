@@ -6,8 +6,8 @@ export const COMMUNITY_LIMIT = 10;
 export const BASE_INFLUENCE_CAP = 5;
 export const STARTING_HAND = 2;
 
-/** Official discard size that triggers the final settlement: 8p→4, 7p→5, 6p→6 … */
-export const endThreshold = (players: number) => 12 - players;
+/** Official discard size that triggers the final settlement: 8p→4, 7p→5, 6p→6 … (custom rounds override it). */
+export const endThreshold = (players: number, rounds = 0) => (rounds > 0 ? rounds : 12 - players);
 
 /** Dice judgement tables (rulebook 其他说明 §1). */
 export function judgeResult(kind: 'truth', face: number): boolean;

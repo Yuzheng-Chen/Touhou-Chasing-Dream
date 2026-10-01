@@ -12,8 +12,18 @@ npm install
 npm run dev            # http://localhost:5173
 ```
 
-Create a room, share the 4-letter code (or the `/r/CODE` link), add AI players if you are short, and press 开始游戏.
-Hover any card (or long-press on a phone) to read it. Everything works on phones.
+New here? Press **🎓 新手教学局** on the title screen: you and two AI play three rounds while on-screen tips explain the goal, the meters, the
+four kinds of cards, events, and each decision as it comes up. The **新手指南** (illustrated rules) is one click away everywhere.
+
+Create a room, share the 4-letter code (or the `/r/CODE` link), add AI players if you are short, tune the **房间设置**, and press 开始游戏.
+
+* **Room settings:** game length (rulebook default 12 − players rounds, or any 2–12), starting hand, who goes first, number of role choices,
+  balanced factions, decision time limit, AI speed, spectators on/off.
+* **Cards:** hover any card (long-press on a phone) for a large view; terms that need explaining (判定 kinds, 拼点, 扣置 …) and other cards it
+  mentions get side boxes, like Slay the Spire's keywords. Each kind of card has its own shape: red rounded **行动**, blue arched **事件**,
+  gold landscape **官作**, vertical-name **角色**.
+* **Table:** latency bars for every player, emotes (😀), keyboard shortcuts (Space = end action, 1–9 = play card, L = log/chat),
+  card-specific effects (switch off with ⚙ → 减少动画), sound with volume.
 
 ## Test with several human players on one computer
 
@@ -46,15 +56,17 @@ If a player is away for ~25 s, an AI covers for them (托管) and hands the seat
 ## Automated tests
 
 ```bash
-npm test                        # 89 engine/room tests in ~2 s
+npm test                        # ~110 engine/room/glossary tests in ~2 s
 npm run e2e -- --players 4      # real browsers: N independent players play complete games (builds first)
 npm run e2e -- --players all    # 3, 4, 5, 6, 7 and 8 players, two games each (with rematch)
+node e2e/ux.mjs                 # real-mouse UX regression: hover, glossary, settings, latency, emotes, the whole tutorial
+node e2e/monkey.mjs --players 5 # chaos: random hovering/clicking/keys/resizing while a full game is played
 npm run check                   # typecheck + unit tests + every e2e suite
 ```
 
 The browser tests start their own server, drive every player only through the UI, and verify: lobby and role choice, full games to the
 final scoring screen, rematch, spectators, hidden information on every socket frame, reconnection (reload, real network loss, long absence),
-and zero console errors. Screenshots land in `e2e/out/`. Details are in `CLAUDE.md`.
+animations that would cause jank, hover-preview behaviour, and zero console errors. Screenshots land in `e2e/out/`. Details are in `CLAUDE.md`.
 
 ## Host on your VPS
 

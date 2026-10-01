@@ -72,6 +72,15 @@ export function LocalSeats() {
     frames.current[`${launch?.run}${seat + 1}`]?.contentWindow?.postMessage({ type: 'tcd:cmd', cmd: c }, location.origin);
   }, [launch?.run]);
 
+  // Tell every seat whether it is on screen, so hidden seats stop animating.
+  useEffect(() => {
+    if (!launch) return;
+    for (let i = 0; i < launch.n; i++) {
+      const on = layout === 'grid' || active === i;
+      frames.current[seatId(i)]?.contentWindow?.postMessage({ type: 'tcd:active', on }, location.origin);
+    }
+  }, [active, layout, launch, launch?.code]);
+
   const summary = useMemo(() => {
     if (!launch) return '';
     const h = hostReport;
@@ -163,6 +172,7 @@ export function LocalSeats() {
                 ref={(el) => { frames.current[id] = el; }}
                 title={`座位 ${i + 1}`}
                 src={src}
+                onLoad={() => frames.current[id]?.contentWindow?.postMessage({ type: 'tcd:active', on: layout === 'grid' || active === i }, location.origin)}
                 allow="autoplay"
               />
             </Cell>

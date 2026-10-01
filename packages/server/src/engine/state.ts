@@ -21,6 +21,8 @@ export interface PlayerState {
   name: string;
   seat: number;
   isBot: boolean;
+  /** Room host (used by the 'host goes first' setting). */
+  host: boolean;
   role: string;
   roleOptions: string[];
   roleRevealed: boolean;

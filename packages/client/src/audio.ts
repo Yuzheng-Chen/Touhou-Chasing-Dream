@@ -9,13 +9,22 @@ export type Sfx = 'click' | 'play' | 'draw' | 'dice' | 'event' | 'official' | 'r
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let muted = prefs.get('muted') === '1';
+let volume = Math.min(1, Math.max(0, Number(prefs.get('volume') ?? 0.7)));
 const listeners = new Set<() => void>();
 
 export const isMuted = () => muted;
+export const getVolume = () => volume;
+const gain = () => (muted ? 0 : volume * 0.7);
 export function setMuted(m: boolean) {
   muted = m;
   prefs.set('muted', m ? '1' : '0');
-  if (master) master.gain.value = m ? 0 : 0.5;
+  if (master) master.gain.value = gain();
+  listeners.forEach((l) => l());
+}
+export function setVolume(v: number) {
+  volume = Math.min(1, Math.max(0, v));
+  prefs.set('volume', String(volume));
+  if (master) master.gain.value = gain();
   listeners.forEach((l) => l());
 }
 export const onMuteChange = (l: () => void) => {
@@ -29,7 +38,7 @@ function ensure(): AudioContext | null {
   if (!AC) return null;
   ctx = new AC();
   master = ctx.createGain();
-  master.gain.value = muted ? 0 : 0.5;
+  master.gain.value = gain();
   master.connect(ctx.destination);
   return ctx;
 }

@@ -4,6 +4,8 @@ import type { CSSProperties } from 'react';
 import { Card, CardBack } from '../cards/Card';
 import { useStore } from '../store';
 import { playerColor } from '../ui/colors';
+import { Signal } from '../ui/Signal';
+import { EmoteBubble } from './Emotes';
 import { InfluenceMeter } from './meters';
 import { usePromptUi } from './prompt';
 
@@ -36,6 +38,7 @@ export function Seat({ p, style }: { p: PlayerView; style?: CSSProperties }) {
           {p.isBot && <span className="seat__tag">AI</span>}
           {!p.connected && <span className="seat__tag seat__tag--off">离线</span>}
           {p.auto && <span className="seat__tag seat__tag--off" title="由 AI 代为操作">托管</span>}
+          {!p.isBot && p.connected && <Signal ms={p.ping} compact className="seat__signal" />}
         </div>
         <InfluenceMeter value={p.influence} cap={p.influenceCap} playerId={p.id} />
         <div className="seat__stats">
@@ -58,6 +61,7 @@ export function Seat({ p, style }: { p: PlayerView; style?: CSSProperties }) {
           </div>
         )}
       </div>
+      <EmoteBubble playerId={p.id} />
       {thinking && <span className="seat__thinking"><i /><i /><i /></span>}
     </motion.div>
   );

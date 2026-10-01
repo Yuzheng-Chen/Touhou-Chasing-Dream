@@ -2,7 +2,12 @@ import type { GameView, PlayerView } from '@tcd/shared';
 import type { Game } from './Game.js';
 
 /** Project the authoritative state into what `viewerId` may see (null = spectator). */
-export function buildView(g: Game, viewerId: string | null, connected: (id: string) => boolean): GameView {
+export function buildView(
+  g: Game,
+  viewerId: string | null,
+  connected: (id: string) => boolean,
+  ping: (id: string) => number | null = () => null,
+): GameView {
   const s = g.s;
   const finished = s.phase === 'finished';
   const isteki = g.officialActive('isc');
@@ -15,6 +20,7 @@ export function buildView(g: Game, viewerId: string | null, connected: (id: stri
     isBot: p.isBot,
     connected: p.isBot || connected(p.id),
     auto: p.auto,
+    ping: p.isBot ? null : ping(p.id),
     influence: p.influence,
     influenceCap: g.influenceCap(p),
     handCount: p.hand.length,
@@ -33,7 +39,7 @@ export function buildView(g: Game, viewerId: string | null, connected: (id: stri
     id: s.id,
     phase: s.phase,
     round: s.round,
-    endThreshold: 12 - s.players.length,
+    endThreshold: g.endTarget,
     players,
     firstPlayerId: s.round ? s.players[s.firstIdx].id : null,
     currentPlayerId: g.current?.id ?? null,

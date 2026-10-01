@@ -1,5 +1,5 @@
 import {
-  DEFAULT_SETTINGS, MAX_PLAYERS, MIN_PLAYERS,
+  DEFAULT_SETTINGS, MAX_PLAYERS, MIN_PLAYERS, SETTING_LIMITS,
   type ChatMessage, type ClientToServer, type RoomSettings, type RoomSummary, type RoomView, type ServerToClient,
 } from '@tcd/shared';
 import type { Server, Socket } from 'socket.io';
@@ -15,6 +15,11 @@ interface Session {
   name: string;
   roomId: string | null;
   sockets: Set<string>;
+  /** Smoothed round-trip time reported by the client. */
+  rtt: number | null;
+  /** Value last broadcast, so small jitter doesn't spam everyone. */
+  rttShown: number | null;
+  rttAt: number;
 }
 
 interface Member {
@@ -29,12 +34,20 @@ const DEFAULT_TIMEOUT = process.env.TCD_PROMPT_TIMEOUT !== undefined ? Number(pr
 /** A human who stays disconnected this long is handed to a bot (托管). */
 const OFFLINE_AUTO_MS = Number(process.env.TCD_OFFLINE_AUTO_MS ?? 25_000);
 
-const BOT_NAMES =['灵梦', '魔理沙', '咲夜', '妖梦', '早苗', '射命丸', '恋恋', '芙兰', '帕秋莉', '铃仙'];
+const BOT_NAMES = ['灵梦', '魔理沙', '咲夜', '妖梦', '早苗', '射命丸', '恋恋', '芙兰', '帕秋莉', '铃仙'];
+const EMOTES = new Set(['thumbs', 'laugh', 'think', 'cry', 'fire', 'wait', 'clap', 'cool']);
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_IDLE_MS = 30 * 60_000;
 
 const rid = (n = 10) => Array.from({ length: n }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
 const clean = (s: unknown, max: number) => String(s ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, max);
+const clampInt = (v: unknown, [lo, hi]: readonly [number, number], fallback: number) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : fallback;
+};
+
+/** Roles used by the coached tutorial game: simple, and on opposite sides so the win conditions can be explained. */
+export const TUTORIAL_ROLES = ['evangelist', 'touhou_police', 'freeloader'];
 
 class Room {
   members: Member[] = [];
@@ -43,6 +56,7 @@ class Room {
   game: Game | null = null;
   chat: ChatMessage[] = [];
   lastActive = Date.now();
+  tutorial = false;
 
   constructor(readonly id: string, public hostId: string, private readonly hub: RoomHub) {}
 
@@ -54,10 +68,13 @@ class Room {
     return {
       id: this.id,
       hostId: this.hostId,
-      members: this.members.map((m) => ({ id: m.id, name: m.name, isBot: m.isBot, connected: m.isBot || this.hub.online(m.id) })),
+      members: this.members.map((m) => ({
+        id: m.id, name: m.name, isBot: m.isBot, connected: m.isBot || this.hub.online(m.id), ping: m.isBot ? null : this.hub.ping(m.id),
+      })),
       settings: this.settings,
       status: this.status,
       youId,
+      tutorial: this.tutorial,
     };
   }
 
@@ -75,16 +92,24 @@ class Room {
     const g = this.game;
     for (const pid of this.audience()) {
       const isMember = this.members.some((m) => m.id === pid);
-      this.hub.emitTo(pid, 'game:state', g ? buildView(g, isMember ? pid : null, (id) => this.hub.online(id)) : null);
+      this.hub.emitTo(pid, 'game:state', g ? buildView(g, isMember ? pid : null, (id) => this.hub.online(id), (id) => this.hub.ping(id)) : null);
     }
   }
 
   start() {
-    const game = new Game(this.members.map((m) => ({ ...m })), {
-      promptTimeout: this.settings.promptTimeout * 1000,
-      botDelay: this.settings.botDelay,
-      roleChoices: this.settings.roleChoices,
+    const s = this.settings;
+    const seats = this.members.map((m) => ({ ...m, host: m.id === this.hostId }));
+    const game = new Game(seats, {
+      promptTimeout: s.promptTimeout * 1000,
+      botDelay: s.botDelay,
+      roleChoices: s.roleChoices,
       fast: TEST_FAST,
+      rounds: s.rounds,
+      startingHand: s.startingHand,
+      firstPlayer: s.firstPlayer,
+      balancedRoles: s.balancedRoles,
+      // The tutorial deals fixed roles (you are always the first seat) so the coaching can name them.
+      ...(this.tutorial ? { roles: TUTORIAL_ROLES } : {}),
     }, () => this.broadcastGame());
     this.game = game;
     this.status = 'playing';
@@ -120,6 +145,10 @@ export class RoomHub {
   online(playerId: string) {
     return (this.byPlayer.get(playerId)?.sockets.size ?? 0) > 0;
   }
+  ping(playerId: string): number | null {
+    const s = this.byPlayer.get(playerId);
+    return s && s.sockets.size ? s.rtt : null;
+  }
   *sessionsIn(roomId: string) {
     for (const s of this.byPlayer.values()) if (s.roomId === roomId) yield s;
   }
@@ -138,6 +167,16 @@ export class RoomHub {
     }
   }
 
+  private newRoom(host: Session) {
+    let id = rid(4);
+    while (this.rooms.has(id)) id = rid(4);
+    const r = new Room(id, host.playerId, this);
+    r.members.push({ id: host.playerId, name: host.name, isBot: false });
+    this.rooms.set(id, r);
+    host.roomId = id;
+    return r;
+  }
+
   attach(sock: Sock) {
     let session: Session | null = null;
     const room = () => (session?.roomId ? this.rooms.get(session.roomId) ?? null : null);
@@ -148,7 +187,7 @@ export class RoomHub {
       if (token.length < 16) return fail(ack, '无效的会话');
       let s = this.sessions.get(token);
       if (!s) {
-        s = { playerId: rid(12), name: '', roomId: null, sockets: new Set() };
+        s = { playerId: rid(12), name: '', roomId: null, sockets: new Set(), rtt: null, rttShown: null, rttAt: 0 };
         this.sessions.set(token, s);
         this.byPlayer.set(s.playerId, s);
       }
@@ -172,9 +211,27 @@ export class RoomHub {
       }
     });
 
+    // Latency: the client times this round trip itself and reports the smoothed value back.
+    sock.on('net:ping', (ack) => typeof ack === 'function' && ack());
+    sock.on('net:rtt', ({ ms }) => {
+      if (!session || !Number.isFinite(ms)) return;
+      session.rtt = Math.max(0, Math.min(5000, Math.round(ms)));
+      const now = Date.now();
+      // Re-broadcast only when the number visibly changed (≥ 25 ms) and not more than every 2.5 s.
+      if (session.rttShown === null || (Math.abs(session.rtt - session.rttShown) >= 25 && now - session.rttAt > 2500)) {
+        session.rttShown = session.rtt;
+        session.rttAt = now;
+        const r = room();
+        if (r) {
+          r.broadcastRoom();
+          if (r.status === 'playing') r.broadcastGame();
+        }
+      }
+    });
+
     sock.on('room:list', (ack) => {
       const list: RoomSummary[] = [...this.rooms.values()]
-        .filter((r) => r.humans.some((m) => this.online(m.id)))
+        .filter((r) => !r.tutorial && r.humans.some((m) => this.online(m.id)))
         .map((r) => ({
           id: r.id,
           hostName: r.members.find((m) => m.id === r.hostId)?.name ?? '?',
@@ -187,25 +244,34 @@ export class RoomHub {
     sock.on('room:create', (ack) => {
       if (!session) return fail(ack, '尚未登录');
       this.leave(session);
-      let id = rid(4);
-      while (this.rooms.has(id)) id = rid(4);
-      const r = new Room(id, session.playerId, this);
-      r.members.push({ id: session.playerId, name: session.name, isBot: false });
-      this.rooms.set(id, r);
-      session.roomId = id;
-      ack({ ok: true, data: { roomId: id } });
+      const r = this.newRoom(session);
+      ack({ ok: true, data: { roomId: r.id } });
       r.broadcastRoom();
+    });
+
+    /** A private practice game: you + two AI, fixed simple roles, short, no time limit; the client coaches. */
+    sock.on('room:tutorial', (ack) => {
+      if (!session) return fail(ack, '尚未登录');
+      this.leave(session);
+      const r = this.newRoom(session);
+      r.tutorial = true;
+      r.settings = { ...DEFAULT_SETTINGS, rounds: 3, startingHand: 3, promptTimeout: 0, botDelay: 1100, roleChoices: 1, allowSpectators: false };
+      r.members.push({ id: `bot_${rid(8)}`, name: '灵梦·AI', isBot: true }, { id: `bot_${rid(8)}`, name: '魔理沙·AI', isBot: true });
+      ack({ ok: true, data: { roomId: r.id } });
+      r.start();
     });
 
     sock.on('room:join', ({ roomId }, ack) => {
       if (!session) return fail(ack, '尚未登录');
       const r = this.rooms.get(clean(roomId, 8).toUpperCase());
-      if (!r) return fail(ack, '房间不存在');
+      if (!r || r.tutorial) return fail(ack, '房间不存在');
       if (session.roomId !== r.id) this.leave(session);
       const already = r.members.some((m) => m.id === session!.playerId);
       if (!already && r.status === 'lobby') {
         if (r.members.length >= MAX_PLAYERS) return fail(ack, '房间已满');
         r.members.push({ id: session.playerId, name: session.name, isBot: false });
+      } else if (!already && !r.settings.allowSpectators) {
+        return fail(ack, '房主不允许观战');
       }
       // Not a member of a running game → spectator.
       session.roomId = r.id;
@@ -230,17 +296,23 @@ export class RoomHub {
 
     sock.on('room:settings', (p) => {
       const r = hostRoom();
-      if (!r) return;
+      if (!r || r.tutorial || !p || typeof p !== 'object') return;
       const s = r.settings;
-      if (p.roleChoices !== undefined) s.roleChoices = Math.max(1, Math.min(6, Math.round(p.roleChoices)));
-      if (p.promptTimeout !== undefined) s.promptTimeout = Math.max(0, Math.min(600, Math.round(p.promptTimeout)));
-      if (p.botDelay !== undefined) s.botDelay = Math.max(0, Math.min(5000, Math.round(p.botDelay)));
+      const L = SETTING_LIMITS;
+      if (p.roleChoices !== undefined) s.roleChoices = clampInt(p.roleChoices, L.roleChoices, s.roleChoices);
+      if (p.promptTimeout !== undefined) s.promptTimeout = clampInt(p.promptTimeout, L.promptTimeout, s.promptTimeout);
+      if (p.botDelay !== undefined) s.botDelay = clampInt(p.botDelay, L.botDelay, s.botDelay);
+      if (p.rounds !== undefined) s.rounds = Number(p.rounds) === 0 ? 0 : clampInt(p.rounds, L.rounds, s.rounds);
+      if (p.startingHand !== undefined) s.startingHand = clampInt(p.startingHand, L.startingHand, s.startingHand);
+      if (p.firstPlayer === 'random' || p.firstPlayer === 'host') s.firstPlayer = p.firstPlayer;
+      if (typeof p.balancedRoles === 'boolean') s.balancedRoles = p.balancedRoles;
+      if (typeof p.allowSpectators === 'boolean') s.allowSpectators = p.allowSpectators;
       r.broadcastRoom();
     });
 
     sock.on('room:addBot', () => {
       const r = hostRoom();
-      if (!r || r.status !== 'lobby' || r.members.length >= MAX_PLAYERS) return;
+      if (!r || r.tutorial || r.status !== 'lobby' || r.members.length >= MAX_PLAYERS) return;
       const used = new Set(r.members.map((m) => m.name));
       const name = BOT_NAMES.find((n) => !used.has(`${n}·AI`)) ?? `AI${r.members.length}`;
       r.members.push({ id: `bot_${rid(8)}`, name: `${name}·AI`, isBot: true });
@@ -294,6 +366,17 @@ export class RoomHub {
       if (r?.game && session && r.members.some((m) => m.id === session!.playerId)) r.game.setAuto(session.playerId, false);
     });
 
+    // Emotes: one per 1.2 s per connection, members only, from a fixed set.
+    let lastEmote = 0;
+    sock.on('game:emote', ({ emote }) => {
+      const r = room();
+      if (!r || !session || !EMOTES.has(emote) || !r.members.some((m) => m.id === session!.playerId)) return;
+      const now = Date.now();
+      if (now - lastEmote < 1200) return;
+      lastEmote = now;
+      for (const pid of r.audience()) this.emitTo(pid, 'game:emote', { fromId: session.playerId, emote, at: now });
+    });
+
     // Simple flood guard: at most 6 chat messages per 5 s per connection.
     const chatTimes: number[] = [];
     sock.on('chat:send', ({ text }) => {
@@ -317,7 +400,12 @@ export class RoomHub {
       if (!r) return;
       const s = session;
       if (!this.online(s.playerId)) {
-        if (r.status === 'lobby') {
+        s.rtt = null;
+        s.rttShown = null;
+        if (r.tutorial) {
+          // Nobody to wait for: drop an abandoned tutorial after a minute.
+          setTimeout(() => !this.online(s.playerId) && s.roomId === r.id && this.leave(s), 60_000);
+        } else if (r.status === 'lobby') {
           // A player who fully disconnects frees their seat after a grace period.
           setTimeout(() => {
             if (!this.online(s.playerId) && s.roomId === r.id && r.status === 'lobby') this.leave(s);
@@ -338,7 +426,7 @@ export class RoomHub {
     const r = s.roomId ? this.rooms.get(s.roomId) : null;
     s.roomId = null;
     if (!r) return;
-    if (r.status !== 'playing') {
+    if (r.status !== 'playing' || r.tutorial) {
       r.members = r.members.filter((m) => m.id !== s.playerId);
     }
     if (!r.humans.length) {

@@ -410,7 +410,7 @@ export function findAlt(g: Game, p: PlayerState, as: string, via: string) {
   return altPlays(g, p).find((a) => a.as === as && a.via === via);
 }
 
-const lastRound = (g: Game) => g.s.officialDiscard.length + 1 >= 12 - g.players.length;
+const lastRound = (g: Game) => g.s.officialDiscard.length + 1 >= g.endTarget;
 
 /** Skill buttons for the action phase. */
 export function skillMoves(g: Game, p: PlayerState): TurnMove[] {

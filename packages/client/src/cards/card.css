@@ -43,9 +43,9 @@
   border-radius: inherit;
   pointer-events: none;
   box-shadow:
-    inset 0 0 0 calc(var(--w) * 0.018) color-mix(in srgb, var(--accent) 85%, #000),
+    inset 0 0 0 calc(var(--w) * 0.018) color-mix(in srgb, var(--kind, var(--accent)) 85%, #000),
     inset 0 0 0 calc(var(--w) * 0.03) rgba(255, 240, 210, 0.55),
-    inset 0 0 0 calc(var(--w) * 0.036) color-mix(in srgb, var(--accent) 60%, #000);
+    inset 0 0 0 calc(var(--w) * 0.036) color-mix(in srgb, var(--kind, var(--accent)) 60%, #000);
   z-index: 3;
 }
 
@@ -203,3 +203,144 @@
   letter-spacing: 0.1em;
   opacity: 0.9;
 }
+
+/* ═════════ Kind identities ═════════
+   Every kind has its own silhouette, colour and tag so a card is recognisable at a glance:
+   行动 = red rounded card · 事件 = blue arched card with ribbon · 官作 = gold landscape card · 角色 = tall card, vertical name. */
+.card__tint { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+
+.card--action { --kind: #c8402e; }
+.card--action .card__tint {
+  background: linear-gradient(180deg, rgba(200, 64, 46, 0.2), transparent 32%, rgba(110, 18, 10, 0.34));
+}
+
+.card--event {
+  --kind: #4d6bdc;
+  border-radius: 50% 50% 7% 7% / 24% 24% 3.5% 3.5%;
+}
+.card--event .card__tint {
+  background: linear-gradient(180deg, rgba(36, 54, 150, 0.55), rgba(60, 90, 200, 0.1) 38%, rgba(18, 28, 96, 0.5));
+}
+.card--event .card__art { background-position: center 30%; }
+
+.card--official {
+  --kind: #d0a73a;
+  aspect-ratio: 7 / 5;
+  border-radius: calc(var(--w) * 0.035);
+}
+.card--official .card__tint {
+  background: linear-gradient(135deg, rgba(120, 70, 170, 0.35), transparent 45%, rgba(208, 167, 58, 0.28));
+}
+.card--official.card--xs { --w: 70px; }
+.card--official.card--sm { --w: 116px; }
+.card--official.card--md { --w: 164px; }
+.card--official.card--lg { --w: 290px; }
+.card--official.card--xl { --w: 380px; }
+.card--official .card__art { background-position: center 24%; }
+
+.card--role { --kind: var(--accent); }
+
+/* Tag naming the kind */
+.card__kind {
+  position: absolute;
+  z-index: 4;
+  top: calc(var(--w) * 0.05);
+  left: calc(var(--w) * 0.05);
+  padding: 0 calc(var(--w) * 0.06) 0 calc(var(--w) * 0.05);
+  font-size: clamp(9px, calc(var(--w) * 0.068), 15px);
+  line-height: 1.75;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #fff;
+  background: var(--kind);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+.card--action .card__kind { clip-path: polygon(0 0, 100% 0, 86% 100%, 0 100%); border-radius: 3px 0 0 3px; }
+.card--official .card__kind { clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); padding-bottom: calc(var(--w) * 0.03); }
+.card--role .card__kind {
+  left: auto;
+  right: calc(var(--w) * 0.05);
+  clip-path: polygon(10% 0, 90% 0, 100% 50%, 90% 100%, 10% 100%, 0 50%);
+  padding: 0 calc(var(--w) * 0.07);
+  background: color-mix(in srgb, var(--kind) 75%, #1d1a2b);
+}
+.card--role .card__badge { top: calc(var(--w) * 0.16); }
+
+/* Event ribbon across the arch */
+.card__ribbon {
+  position: absolute;
+  z-index: 4;
+  top: calc(var(--w) * 0.075);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  white-space: nowrap;
+  font-size: clamp(9px, calc(var(--w) * 0.066), 15px);
+  line-height: 1.8;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #fff;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+.card__ribbon b,
+.card__ribbon span {
+  padding: 0 calc(var(--w) * 0.05);
+}
+.card__ribbon b {
+  background: linear-gradient(180deg, #5b7be8, #3552c0);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 12% 50%);
+  padding-left: calc(var(--w) * 0.08);
+}
+.card__ribbon span {
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 88% 50%, 100% 100%, 0 100%);
+  padding-right: calc(var(--w) * 0.08);
+}
+.card--event.card--lg .card__plate,
+.card--event.card--xl .card__plate { padding-top: calc(var(--w) * 0.19); }
+
+/* 正 / 逆 markers under an event's name */
+.card__dirs {
+  display: flex;
+  justify-content: center;
+  gap: calc(var(--w) * 0.05);
+  margin-top: calc(var(--w) * 0.025);
+}
+.card__dirs .dir {
+  font-style: normal;
+  padding: 0 calc(var(--w) * 0.05);
+  font-size: clamp(9px, calc(var(--w) * 0.066), 14px);
+  line-height: 1.7;
+  font-weight: 900;
+  color: #fff;
+  border-radius: 999px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+.card--chain .card__frame {
+  box-shadow:
+    inset 0 0 0 calc(var(--w) * 0.018) #e0b84a,
+    inset 0 0 0 calc(var(--w) * 0.03) rgba(255, 240, 210, 0.55),
+    inset 0 0 0 calc(var(--w) * 0.036) #4d6bdc;
+}
+
+/* Keyword highlight inside card text; the glossary box explains it on hover. */
+.card__text .kw {
+  font-weight: 700;
+  color: #7a3b12;
+  border-bottom: 1px dotted #7a3b12;
+}
+.card--back.card--event { border-radius: 50% 50% 7% 7% / 24% 24% 3.5% 3.5%; }
+.card--back .card__back { border-radius: inherit; }
+.card--back.card--event .card__back { inset: calc(var(--w) * 0.06); border-radius: 50% 50% 5% 5% / 24% 24% 3% 3%; }
+
+/* Landscape officials have little height: tighter text, tidier header. */
+.card--official.card--lg .card__text,
+.card--official.card--xl .card__text { font-size: clamp(10px, calc(var(--w) * 0.04), 15px); max-height: 60%; line-height: 1.5; }
+.card--official.card--lg .card__plate,
+.card--official.card--xl .card__plate { padding: calc(var(--w) * 0.03) calc(var(--w) * 0.18) calc(var(--w) * 0.1); }
+.card--official.card--lg .card__name,
+.card--official.card--xl .card__name { font-size: calc(var(--w) * 0.07); }
+.card--official.card--lg .card__sub,
+.card--official.card--xl .card__sub { font-size: calc(var(--w) * 0.032); }

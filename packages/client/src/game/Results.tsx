@@ -2,6 +2,7 @@ import { motion } from 'motion/react';
 import { useState } from 'react';
 import { Card } from '../cards/Card';
 import { socket } from '../net';
+import { Confetti } from './Fx';
 import { useStore } from '../store';
 import { playerColor } from '../ui/colors';
 
@@ -10,6 +11,7 @@ export function Results() {
   const room = useStore((s) => s.room);
   const [hidden, setHidden] = useState(false);
   const res = game.result;
+  const me = useStore((s) => s.playerId);
   if (!res) return null;
   if (hidden) {
     return <button className="btn btn--gold results__reopen" onClick={() => setHidden(false)}>查看结算</button>;
@@ -18,6 +20,7 @@ export function Results() {
 
   return (
     <motion.div className="sheet-backdrop results" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {me && res.winnerIds.includes(me) && !document.documentElement.classList.contains('reduce-motion') && <Confetti />}
       <motion.div className="sheet results__sheet" initial={{ y: 30, scale: 0.97 }} animate={{ y: 0, scale: 1 }} transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.6 }}>
         <div className="results__head">
           <h2 className="results__title">终局结算</h2>
@@ -58,7 +61,9 @@ export function Results() {
         <div className="results__actions">
           <button className="btn" onClick={() => setHidden(true)}>查看牌桌</button>
           <button className="btn" onClick={() => socket.emit('room:leave')}>离开房间</button>
-          {isHost ? (
+          {room?.tutorial ? (
+            <button className="btn btn--primary" onClick={() => socket.emit('room:leave')}>回到首页</button>
+          ) : isHost ? (
             <button className="btn btn--primary" onClick={() => socket.emit('room:rematch')}>再来一局</button>
           ) : (
             <span className="muted">等待房主开始下一局…</span>

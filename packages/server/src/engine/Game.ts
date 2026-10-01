@@ -1,6 +1,6 @@
 import {
   ACTION_CARDS, BASE_INFLUENCE_CAP, COMMUNITY_LIMIT, EVENT_CARDS, JUDGE_LABEL, OFFICIAL_CARDS,
-  actionDef, baseHandLimit, cardDef, judgeResult,
+  actionDef, baseHandLimit, cardDef, endThreshold, judgeResult,
   type AnswerOf, type CardInstance, type Fx, type JudgeKind, type LogEntry, type Prompt,
   type PromptKind, type PromptSpec, type Tone,
 } from '@tcd/shared';
@@ -14,6 +14,7 @@ export interface Seat {
   id: string;
   name: string;
   isBot: boolean;
+  host?: boolean;
 }
 
 export interface GameOptions {
@@ -34,6 +35,14 @@ export interface GameOptions {
   roles?: string[];
   /** Tests: start with assigned roles face-up so passive skills are exercised. */
   revealRoles?: boolean;
+  /** Custom game length (officials in the discard pile that end the game). 0/undefined = 12 − players. */
+  rounds?: number;
+  /** Action cards dealt at the start (default 2). */
+  startingHand?: number;
+  /** host makes the seat flagged host go first; otherwise random. */
+  firstPlayer?: 'random' | 'host';
+  /** Offer each player a 繁荣 and a 小众 role (default true). */
+  balancedRoles?: boolean;
 }
 
 /** What caused a number to change — decides immunities and triggers. */
@@ -91,7 +100,7 @@ export class Game {
       players: seats.map((seat, i) => ({
         id: seat.id, name: seat.name, seat: i, isBot: seat.isBot,
         role: '', roleOptions: [], roleRevealed: false, influence: 0,
-        hand: [], turnEvent: null, faceDownEvent: null, statuses: [], oshi: [],
+        host: !!seat.host, hand: [], turnEvent: null, faceDownEvent: null, statuses: [], oshi: [],
         allegiance: null, idolId: null, pendingGift: [], maxScoreUsed: [], auto: false, timeouts: 0,
       })),
       firstIdx: 0,
@@ -119,6 +128,10 @@ export class Game {
 
   get players() {
     return this.s.players;
+  }
+  /** Officials in the discard pile that end the game. */
+  get endTarget() {
+    return endThreshold(this.s.players.length, this.opts.rounds);
   }
   player(id: string): PlayerState {
     const p = this.s.players.find((x) => x.id === id);

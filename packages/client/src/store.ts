@@ -9,6 +9,14 @@ export interface Toast {
   tone?: Tone;
 }
 
+/** A few cards travelling from the deck (or a player) to a player. */
+export interface Flight {
+  id: number;
+  from: string; // 'deck' or a player id
+  to: string; // a player id
+  n: number;
+}
+
 /** A floating "+2 / −1" next to a meter. Keyed by 'community' or a player id. */
 export interface Pulse {
   delta: number;
@@ -31,7 +39,16 @@ interface State {
   lastSeq: number;
   pulses: Record<string, Pulse>;
   sidebar: 'log' | 'chat';
-  overlay: null | 'rules' | 'gallery';
+  overlay: null | 'rules' | 'gallery' | 'settings';
+  /** Smoothed round-trip time to the server in ms (null = unknown / offline). */
+  ping: number | null;
+  /** Latest emote per player id, shown as a bubble over their seat. */
+  emotes: Record<string, { emote: string; key: number }>;
+  /** Cards in flight (draws / transfers) waiting to be animated. */
+  flights: Flight[];
+  /** Bumps when something big happens (large community swing) → the table shakes. */
+  shake: number;
+  endFlight(id: number): void;
 
   setName(n: string): void;
   setHover(id: string | null): void;
@@ -61,6 +78,13 @@ export const useStore = create<State>((set, get) => ({
   pulses: {},
   sidebar: 'log',
   overlay: null,
+  ping: null,
+  emotes: {},
+  flights: [],
+  shake: 0,
+  endFlight(id) {
+    set({ flights: get().flights.filter((f) => f.id !== id) });
+  },
 
   setName(n) {
     saveName(n);
@@ -74,7 +98,7 @@ export const useStore = create<State>((set, get) => ({
     set({ sidebar: s, unreadChat: s === 'chat' ? 0 : get().unreadChat });
   },
   setOverlay(o) {
-    set({ overlay: o });
+    set({ overlay: o, hover: null });
   },
   toast(text, tone) {
     const id = ++toastSeq;
@@ -141,7 +165,13 @@ function ingestGame(game: GameView | null) {
   const incoming = game.log.filter((e) => e.seq > st.lastSeq);
   const pulses = { ...st.pulses };
   let mood: 'up' | 'down' | null = null;
+  const reduced = document.documentElement.classList.contains('reduce-motion');
+  const flights = [...st.flights];
+  let shake = st.shake;
   for (const e of incoming) {
+    if (!reduced && e.fx?.type === 'draw') flights.push({ id: ++pulseSeq, from: 'deck', to: e.fx.playerId, n: e.fx.count });
+    if (!reduced && e.fx?.type === 'transfer') flights.push({ id: ++pulseSeq, from: e.fx.fromId, to: e.fx.toId, n: e.fx.count });
+    if (!reduced && e.fx?.type === 'community' && Math.abs(e.fx.to - e.fx.from) >= 4) shake++;
     if (e.fx?.type === 'community') {
       const d = e.fx.to - e.fx.from;
       pulses.community = { delta: d, key: ++pulseSeq };
@@ -162,23 +192,60 @@ function ingestGame(game: GameView | null) {
   if (me && game.currentPlayerId === me && st.game?.currentPlayerId !== me) sfx('turn');
   if (me && game.phase === 'finished' && st.game?.phase !== 'finished') sfx(game.result?.winnerIds.includes(me) ? 'win' : 'lose');
 
-  const fx = incoming.filter((e) => e.fx && FX_TYPES.includes(e.fx.type));
+  const fx = document.documentElement.classList.contains('reduce-motion') ? [] : incoming.filter((e) => e.fx && FX_TYPES.includes(e.fx.type));
   // If we fell far behind (tab in background), drop the backlog of animations.
   const queue = [...st.fxQueue, ...fx];
   useStore.setState({
     game,
     lastSeq: Math.max(st.lastSeq, newest),
     pulses,
+    flights: flights.slice(-6),
+    shake,
     fxQueue: queue.length > 6 ? queue.slice(-2) : queue,
   });
 }
 
 // ── socket wiring ─────────────────────────────────────────────
+// Latency: time a ping/ack round trip, smooth it, and report it so every player's seat can show it.
+let pingTimer: ReturnType<typeof setInterval> | undefined;
+function measurePing() {
+  if (!socket.connected) return;
+  const t0 = performance.now();
+  let answered = false;
+  const giveUp = setTimeout(() => !answered && useStore.setState({ ping: null }), 4000);
+  socket.emit('net:ping', () => {
+    answered = true;
+    clearTimeout(giveUp);
+    const ms = performance.now() - t0;
+    const prev = useStore.getState().ping;
+    const smooth = Math.round(prev == null ? ms : prev * 0.6 + ms * 0.4);
+    useStore.setState({ ping: smooth });
+    socket.emit('net:rtt', { ms: smooth });
+  });
+}
+
 socket.on('connect', () => {
   useStore.setState({ connected: true });
   hello();
+  measurePing();
+  clearInterval(pingTimer);
+  pingTimer = setInterval(measurePing, 3000);
 });
-socket.on('disconnect', () => useStore.setState({ connected: false }));
+socket.on('disconnect', () => {
+  useStore.setState({ connected: false, ping: null });
+  clearInterval(pingTimer);
+});
+socket.on('game:emote', ({ fromId, emote }) => {
+  const key = ++pulseSeq;
+  useStore.setState({ emotes: { ...useStore.getState().emotes, [fromId]: { emote, key } } });
+  setTimeout(() => {
+    const cur = useStore.getState().emotes[fromId];
+    if (cur?.key === key) {
+      const { [fromId]: _gone, ...rest } = useStore.getState().emotes;
+      useStore.setState({ emotes: rest });
+    }
+  }, 2600);
+});
 socket.on('room:state', (room) => {
   useStore.setState({ room });
   const want = (room ? `/r/${room.id}` : '/') + location.search;
@@ -202,6 +269,11 @@ export function connect() {
 
 // Handy selectors
 export const selectMe = (s: State) => s.game?.players.find((p) => p.id === s.playerId) ?? null;
+
+// Animations pause while the tab is in the background or this seat is hidden inside the /local console.
+let embeddedActive = true;
+const syncPaused = () => document.documentElement.classList.toggle('paused', document.hidden || !embeddedActive);
+document.addEventListener('visibilitychange', syncPaused);
 
 // ── local multi-seat console integration ──────────────────────
 // When embedded by /local, report this seat's status upward and accept a few commands back.
@@ -245,6 +317,11 @@ if (window.parent !== window) {
   useStore.subscribe(report);
 
   window.addEventListener('message', (e) => {
+    if (e.origin === location.origin && e.data?.type === 'tcd:active') {
+      embeddedActive = !!e.data.on;
+      syncPaused();
+      return;
+    }
     if (e.origin !== location.origin || e.data?.type !== 'tcd:cmd') return;
     const { cmd } = e.data as { cmd: string };
     if (cmd === 'start') request('room:start').catch((err) => useStore.getState().toast(String(err), 'bad'));

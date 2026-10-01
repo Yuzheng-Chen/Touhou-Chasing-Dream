@@ -5,6 +5,8 @@ import { Card, CardBack } from '../cards/Card';
 import { socket } from '../net';
 import { selectMe, useStore } from '../store';
 import { playerColor } from '../ui/colors';
+import { Signal } from '../ui/Signal';
+import { EmoteBubble, EmotePicker } from './Emotes';
 import { InfluenceMeter } from './meters';
 import { PlayMenu, PromptPanel, usePromptUi } from './prompt';
 
@@ -34,7 +36,7 @@ export function MyArea() {
             <span className={`myarea__roleflag ${meView.roleRevealed ? 'is-open' : ''}`}>{meView.roleRevealed ? '已翻开' : '未公开'}</span>
           </div>
           <div className="myarea__stats">
-            <div className="myarea__name">{meView.name}{isTurn && <span className="chip chip--turn">你的回合</span>}</div>
+            <div className="myarea__name">{meView.name}{isTurn && <span className="chip chip--turn">你的回合</span>}<EmotePicker /><EmoteBubble playerId={meView.id} /></div>
             <InfluenceMeter value={meView.influence} cap={meView.influenceCap} playerId={meView.id} big />
             <div className="myarea__limits">
               手牌 <b>{meView.handCount}</b> / 上限 <b>{meView.handLimit ?? '∞'}</b>

@@ -39,7 +39,7 @@
   --text-dim: #aaa4c8;
   --text-faint: #6f6a92;
 
-  --panel: rgba(22, 19, 42, 0.78);
+  --panel: rgba(22, 19, 42, 0.9);
   --panel-solid: #1a1730;
   --panel-border: rgba(216, 178, 90, 0.28);
   --hairline: rgba(255, 255, 255, 0.08);
@@ -220,8 +220,6 @@ button {
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
   box-shadow: var(--shadow);
 }
 
@@ -269,4 +267,13 @@ button {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Hidden seats of the /local console (and background tabs) shouldn't burn GPU. */
+html.paused *, html.paused *::before, html.paused *::after { animation-play-state: paused !important; }
+
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }

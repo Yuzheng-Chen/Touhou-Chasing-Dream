@@ -1,11 +1,13 @@
 import { JUDGE_LABEL, cardDef, type Fx as FxT, type LogEntry } from '@tcd/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useState } from 'react';
-import { Card } from '../cards/Card';
-import { useStore } from '../store';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { Card, CardBack } from '../cards/Card';
+import { useStore, type Flight } from '../store';
 import { playerColor } from '../ui/colors';
+import { Burst, presetFor } from './Burst';
+import './fx.css';
 
-const DURATION: Record<string, number> = { play: 1300, dice: 1500, event: 1700, official: 2000, reveal: 1600 };
+const DURATION: Record<string, number> = { play: 1500, dice: 1500, event: 1700, official: 2000, reveal: 1600 };
 
 /** Plays queued log effects one by one over the table. */
 export function FxLayer() {
@@ -23,6 +25,8 @@ export function FxLayer() {
   return (
     <div className="fx" aria-hidden>
       <AnimatePresence mode="wait">{current && <FxItem key={current.seq} e={current} />}</AnimatePresence>
+      <TurnBanner />
+      <Flights />
     </div>
   );
 }
@@ -60,6 +64,7 @@ function FxItem({ e }: { e: LogEntry }) {
 function PlayFx({ fx }: { fx: Extract<FxT, { type: 'play' }> }) {
   const p = usePlayer(fx.playerId);
   const o = seatOrigin(fx.playerId);
+  const preset = presetFor(fx.as ?? fx.cardId);
   return (
     <motion.div
       className="fx__play"
@@ -68,17 +73,14 @@ function PlayFx({ fx }: { fx: Extract<FxT, { type: 'play' }> }) {
       exit={{ y: -60, scale: 0.8, opacity: 0 }}
       transition={{ type: 'spring', stiffness: 180, damping: 20 }}
     >
+      <Burst preset={preset} />
       <Card id={fx.cardId} size="lg" noPreview />
       <div className="fx__caption">
         <b style={{ color: p ? playerColor(p.seat) : undefined }}>{p?.name}</b>
-        {fx.as ? <> 视作「<RichName id={fx.as} />」打出</> : ' 打出'}
+        {fx.as ? <> 视作「{cardDef(fx.as).name}」打出</> : ' 打出'}
       </div>
     </motion.div>
   );
-}
-
-function RichName({ id }: { id: string }) {
-  return <>{cardDef(id).name}</>;
 }
 
 const PIPS: Record<number, [number, number][]> = {
@@ -118,7 +120,7 @@ function DiceFx({ fx }: { fx: Extract<FxT, { type: 'dice' }> }) {
   const res = typeof fx.result === 'boolean' ? (fx.result ? '真' : '假') : fx.judge === 'delta' && fx.result > 0 ? `+${fx.result}` : String(fx.result);
   return (
     <motion.div className="fx__dice" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}>
-      <motion.div animate={done ? { rotate: 0, scale: [1.25, 1] } : { rotate: [0, 90, 180, 270, 360] }} transition={done ? { duration: 0.3 } : { repeat: Infinity, duration: 0.5, ease: 'linear' }}>
+      <motion.div animate={done ? { rotate: 0, scale: [1.3, 1] } : { rotate: [0, 90, 180, 270, 360], y: [0, -26, 0] }} transition={done ? { duration: 0.3 } : { repeat: Infinity, duration: 0.5, ease: 'linear' }}>
         <Die face={face} />
       </motion.div>
       <div className="fx__caption">
@@ -134,6 +136,7 @@ function Banner({ cardId, playerId, caption, tone, big }: { cardId: string; play
   return (
     <motion.div className={`fx__banner fx__banner--${tone}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <motion.div className="fx__ribbon" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} exit={{ scaleX: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} />
+      {(tone === 'up' || tone === 'down') && <Burst preset={tone === 'up' ? 'rise' : 'fall'} />}
       <motion.div initial={{ rotateY: 100, scale: 0.8 }} animate={{ rotateY: 0, scale: 1 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}>
         <Card id={cardId} size={big ? 'xl' : 'lg'} noPreview />
       </motion.div>
@@ -142,5 +145,99 @@ function Banner({ cardId, playerId, caption, tone, big }: { cardId: string; play
         <span>{caption}</span>
       </motion.div>
     </motion.div>
+  );
+}
+
+/** "你的回合" sweep when the turn passes to you. */
+function TurnBanner() {
+  const mine = useStore((s) => !!s.playerId && s.game?.currentPlayerId === s.playerId && s.game.phase !== 'finished');
+  const round = useStore((s) => s.game?.round ?? 0);
+  const [key, setKey] = useState(0);
+  useEffect(() => {
+    if (!mine || document.documentElement.classList.contains('reduce-motion')) return;
+    setKey((k) => k + 1);
+    const t = setTimeout(() => setKey(0), 1500);
+    return () => clearTimeout(t);
+  }, [mine, round]);
+  return (
+    <AnimatePresence>
+      {key > 0 && (
+        <motion.div key={key} className="fx__turn" initial={{ opacity: 0, x: -120 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 120 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}>
+          <span>你的回合</span>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ── cards flying between the deck and seats ───────────────────────────────────
+
+function Flights() {
+  const flights = useStore((s) => s.flights);
+  return <>{flights.map((f) => <FlightItem key={f.id} f={f} />)}</>;
+}
+
+function centre(el: Element | null) {
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function FlightItem({ f }: { f: Flight }) {
+  const end = useStore((s) => s.endFlight);
+  const me = useStore((s) => s.playerId);
+  const [pts, setPts] = useState<{ a: { x: number; y: number }; b: { x: number; y: number } } | null>(null);
+
+  useLayoutEffect(() => {
+    const seat = (id: string) => centre(document.querySelector(id === me ? '.hand, .myarea' : `[data-seat-id="${id}"]`));
+    const a = f.from === 'deck' ? centre(document.querySelector('.decks .deck .card')) : seat(f.from);
+    const b = seat(f.to);
+    if (a && b) setPts({ a, b });
+    else end(f.id);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => end(f.id), 1100);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!pts) return null;
+  const n = Math.min(3, f.n);
+  return (
+    <>
+      {Array.from({ length: n }, (_, i) => (
+        <motion.div
+          key={i}
+          className="fx__flight"
+          initial={{ left: pts.a.x, top: pts.a.y, opacity: 0, scale: 0.8, rotate: -10 }}
+          animate={{ left: pts.b.x, top: pts.b.y, opacity: [0, 1, 1, 0], scale: [0.8, 1, 0.9, 0.5], rotate: [-10, 6, 0, 0] }}
+          transition={{ duration: 0.65, delay: i * 0.09, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <CardBack kind={f.from === 'deck' ? 'action' : 'action'} size="sm" />
+        </motion.div>
+      ))}
+    </>
+  );
+}
+
+/** Falling confetti for winners (compositor-only: transform + opacity). */
+export function Confetti() {
+  const bits = useMemo(
+    () => Array.from({ length: 70 }, (_, i) => ({
+      x: Math.random() * 100,
+      d: 2.4 + Math.random() * 2.2,
+      delay: Math.random() * 1.6,
+      c: ['#f3d58a', '#f06a5d', '#58c28f', '#9aa2ff', '#f2a7bb'][i % 5],
+      w: 6 + Math.random() * 6,
+      r: Math.random() * 360,
+    })),
+    [],
+  );
+  return (
+    <div className="confetti" aria-hidden>
+      {bits.map((b, i) => (
+        <i key={i} style={{ left: `${b.x}%`, width: b.w, height: b.w * 1.6, background: b.c, animationDuration: `${b.d}s`, animationDelay: `${b.delay}s`, transform: `rotate(${b.r}deg)` }} />
+      ))}
+    </div>
   );
 }
