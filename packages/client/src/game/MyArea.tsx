@@ -53,25 +53,19 @@ export function MyArea() {
 
         <Hand />
 
+        {/* Fixed-size slots (empty ones are drawn as outlines): the hand beside them must never change width. */}
         <div className="myarea__events">
-          {me.turnEvent && (
-            <div className="evslot">
-              <Card id={me.turnEvent.defId} size="md" />
-              <span className="evslot__label">本回合事件</span>
-            </div>
-          )}
-          {me.faceDownEvent && (
-            <div className="evslot evslot--down">
-              <Card id={me.faceDownEvent.defId} size="sm" />
-              <span className="evslot__label">已扣置</span>
-            </div>
-          )}
-          {me.oshi.length > 0 && (
-            <div className="evslot">
-              <div className="oshi">{me.oshi.map((c) => <Card key={c.uid} id={c.defId} size="xs" />)}</div>
-              <span className="evslot__label">单推牌</span>
-            </div>
-          )}
+          <div className={`evslot evslot--turn ${me.turnEvent ? '' : 'is-empty'}`}>
+            {me.turnEvent ? <Card id={me.turnEvent.defId} size="md" /> : <div className="evslot__ph" />}
+            <span className="evslot__label">本回合事件</span>
+          </div>
+          <div className={`evslot evslot--down ${me.faceDownEvent || me.oshi.length ? '' : 'is-empty'}`}>
+            {me.faceDownEvent ? <Card id={me.faceDownEvent.defId} size="sm" /> : <div className="evslot__ph" />}
+            <span className="evslot__label">已扣置</span>
+            {me.oshi.length > 0 && (
+              <div className="oshi" title="单推牌">{me.oshi.map((c) => <Card key={c.uid} id={c.defId} size="xs" />)}</div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -91,8 +85,7 @@ function Hand() {
     if (!el) return;
     const ro = new ResizeObserver(() => {
       setWidth(el.clientWidth);
-      const c = el.querySelector('.card');
-      if (c) setCardW((c as HTMLElement).offsetWidth || 124); // CSS sets the size (smaller on phones)
+      setCardW(parseFloat(getComputedStyle(el).getPropertyValue('--cw')) || 124); // CSS sets the size (smaller on phones)
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -107,12 +100,18 @@ function Hand() {
 
   const n = hand.length;
   const gap = n > 1 ? Math.min(12, (width - cardW) / (n - 1) - cardW) : 0;
+  // Every card has an explicit position: nothing in the hand depends on flex layout, so a change elsewhere on the table can never
+  // shift it (and no layout animation can misfire). Cards only move when the hand itself changes.
+  const total = n ? n * cardW + (n - 1) * gap : 0;
+  const start = Math.max(0, (width - total) / 2);
+  const track = Math.max(width, total);
   const p = ui.prompt;
   const pickMode = p?.kind === 'cards' && p.source === 'hand';
   const pickable = new Set(pickMode ? p.cards.map((c) => c.uid) : []);
 
   return (
     <div className="hand" ref={ref}>
+      <div className="hand__track" style={{ width: track }}>
       <AnimatePresence initial={false}>
         {hand.map((c, i) => {
           const moves = ui.movesFor(c.uid);
@@ -132,11 +131,10 @@ function Hand() {
           return (
             <motion.div
               key={c.uid}
-              layout
               className={`hand__card ${selected ? 'is-up' : ''}`}
-              style={{ marginLeft: i ? gap : 0, zIndex: ui.menuUid === c.uid ? 50 : i }}
-              initial={{ opacity: 0, y: 60, scale: 0.9 }}
-              animate={{ opacity: 1, y: Math.abs(t) * 18 - (selected ? 22 : 0), rotate: t * 8, scale: 1 }}
+              style={{ zIndex: ui.menuUid === c.uid ? 50 : i }}
+              initial={{ opacity: 0, x: start + i * (cardW + gap), y: 60, scale: 0.9 }}
+              animate={{ opacity: 1, x: start + i * (cardW + gap), y: Math.abs(t) * 18 - (selected ? 22 : 0), rotate: t * 8, scale: 1 }}
               exit={{ opacity: 0, y: -80, scale: 0.8 }}
               transition={{ type: 'spring', stiffness: 260, damping: 26 }}
             >
@@ -153,6 +151,7 @@ function Hand() {
           );
         })}
       </AnimatePresence>
+      </div>
       {n === 0 && <div className="hand__empty">没有手牌</div>}
     </div>
   );

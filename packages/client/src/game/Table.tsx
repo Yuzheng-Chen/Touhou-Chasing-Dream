@@ -1,22 +1,24 @@
 import { PHASE_LABEL, type Phase } from '@tcd/shared';
 import { AnimatePresence } from 'motion/react';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { Suspense, lazy, useEffect, useState, type CSSProperties } from 'react';
 import { MuteButton } from '../ui/MuteButton';
 import { Signal } from '../ui/Signal';
-import { Coach } from './Coach';
 import { Shortcuts } from './Shortcuts';
 import { socket } from '../net';
 import { useStore } from '../store';
 import { playerColor } from '../ui/colors';
 import { Center } from './Center';
-import { FxLayer } from './Fx';
+import { FxLayer } from './fx';
 import { MyArea } from './MyArea';
 import { PromptProvider, RevealConfirm, RolePicker } from './prompt';
 import { VoteModal, proposeAbort } from './Vote';
-import { Results } from './Results';
 import { Seat } from './Seat';
 import { SidePanel } from './SidePanel';
 import './table.css';
+
+// The tutorial coach and the final-settlement show are downloaded when they are first needed.
+const Coach = lazy(() => import('./Coach').then((m) => ({ default: m.Coach })));
+const Results = lazy(() => import('./Results').then((m) => ({ default: m.Results })));
 
 const TURN_PHASES: Phase[] = ['eventDraw', 'draw', 'action', 'eventResolve', 'discard'];
 
@@ -37,7 +39,7 @@ export function Table() {
   useEffect(() => {
     if (!shake) return;
     setShaking(true);
-    const t = setTimeout(() => setShaking(false), 480);
+    const t = setTimeout(() => setShaking(false), 600);
     return () => clearTimeout(t);
   }, [shake]);
 
@@ -62,10 +64,10 @@ export function Table() {
         <Shortcuts />
         <RevealConfirm />
         <VoteModal />
-        {room?.tutorial && <Coach />}
+        <Suspense fallback={null}>{room?.tutorial && <Coach />}</Suspense>
         <FxLayer />
         <AnimatePresence>{game.phase === 'roleSelect' && <RolePicker />}</AnimatePresence>
-        {game.phase === 'finished' && <Results />}
+        <Suspense fallback={null}>{game.phase === 'finished' && <Results />}</Suspense>
       </div>
     </PromptProvider>
   );

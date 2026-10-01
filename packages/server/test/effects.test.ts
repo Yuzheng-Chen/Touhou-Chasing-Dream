@@ -8,6 +8,7 @@ import { resolveEvent } from '../src/engine/events.js';
 import { listMoves, playCard } from '../src/engine/flow.js';
 import type { Game } from '../src/engine/Game.js';
 import { useSkill } from '../src/engine/roles.js';
+import { scoreGame } from '../src/engine/scoring.js';
 import { RoomHub } from '../src/rooms.js';
 import { giveCards, scriptedGame, setOfficial, startTurn } from './harness.js';
 
@@ -35,22 +36,87 @@ describe('effect events (drive the on-screen effects)', () => {
     expect(fxOf(g, 'target')).toContainEqual({ type: 'target', fromId: 'p0', toIds: ['p2'], cardId: 'rumor' });
   });
 
-  it('rule modifiers are announced: 煽风点火 and 东方辉针城', async () => {
+  it('every number change carries its calculation: printed number, modifiers, final value', async () => {
     const g = scriptedGame(3);
     const [a] = g.players;
     startTurn(g, a);
     const [fan] = giveCards(g, a, 'fan_flames');
     await playCard(g, a, fan.uid, 'fan_flames');
     await resolveEvent(g, a, g.newCard('calm'), 'none'); // +3, becomes +4
-    const mods = fxOf(g, 'mod') as Extract<Fx, { type: 'mod' }>[];
-    expect(mods.map((m) => m.sourceId)).toContain('fan_flames');
-    expect(mods.find((m) => m.sourceId === 'fan_flames')!.amount).toContain('+1');
+    const comm = fxOf(g, 'community').at(-1) as Extract<Fx, { type: 'community' }>;
+    expect(comm.to - comm.from).toBe(4);
+    expect(comm.calc!.map((s) => [s.sourceId, s.value])).toEqual([['calm', 3], ['fan_flames', 4]]);
 
     const g2 = scriptedGame(3);
     setOfficial(g2, 'ddc');
     startTurn(g2, g2.players[0]);
     await resolveEvent(g2, g2.players[0], g2.newCard('calm'), 'none');
-    expect((fxOf(g2, 'mod') as Extract<Fx, { type: 'mod' }>[]).some((m) => m.sourceId === 'ddc' && m.amount.includes('+3 → +6'))).toBe(true);
+    const c2 = fxOf(g2, 'community').at(-1) as Extract<Fx, { type: 'community' }>;
+    expect(c2.calc!.map((s) => [s.label, s.value])).toEqual([['大环境沉稳', 3], ['东方辉针城', 6]]);
+
+    // An action card under 辉针城 shows its printed number and the doubling too.
+    const g3 = scriptedGame(3, (_g, _w, p) => (p.kind === 'choice' ? '+' : undefined));
+    setOfficial(g3, 'ddc');
+    startTurn(g3, g3.players[0]);
+    const [pr] = giveCards(g3, g3.players[0], 'preach');
+    await playCard(g3, g3.players[0], pr.uid, 'preach');
+    const c3 = fxOf(g3, 'community').at(-1) as Extract<Fx, { type: 'community' }>;
+    expect(c3.calc!.map((s) => s.value)).toEqual([2, 4]);
+    // Values that hit a limit say so.
+    await g3.changeCommunity(40, { cause: 'rule' });
+    const capped = fxOf(g3, 'community').at(-1) as Extract<Fx, { type: 'community' }>;
+    expect(capped.calc!.at(-1)!.label).toBe('上限');
+  });
+
+  it('a card stays on the stage until its effect is over, then settles', async () => {
+    const g = scriptedGame(3, (_g, _w, p) => (p.kind === 'players' ? ['p1'] : undefined));
+    startTurn(g, g.players[0]);
+    const [c] = giveCards(g, g.players[0], 'rumor');
+    await playCard(g, g.players[0], c.uid, 'rumor');
+    const types = g.s.log.map((l) => l.fx?.type).filter(Boolean);
+    const play = types.indexOf('play');
+    const settle = types.indexOf('settle');
+    expect(play).toBeGreaterThanOrEqual(0);
+    expect(types.slice(play, settle)).toContain('target');
+    expect(types.slice(play, settle)).toContain('influence'); // the numbers happen while the card is still in the middle
+    expect(fxOf(g, 'settle')[0]).toMatchObject({ cardId: 'rumor', playerId: 'p0', to: 'discard' });
+    expect(g.s.actionDiscard.at(-1)?.defId).toBe('rumor');
+  });
+
+  it('the final settlement tells how every score came about, step by step', () => {
+    const g = scriptedGame(3);
+    const [a, b, c] = g.players;
+    a.role = 'evangelist'; a.influence = 2; // 社群·繁荣
+    b.role = 'touhou_police'; b.influence = 5;
+    c.role = 'freeloader'; c.influence = -1;
+    g.s.community = 3;
+    const res = scoreGame(g);
+    const line = (id: string) => res.lines.find((l) => l.playerId === id)!;
+    const ea = line('p0');
+    expect(ea.won).toBe(true);
+    expect(ea.baseScore).toBe(3);
+    expect(ea.steps.map((s) => s.label)).toEqual(['阵营', '社群规模', '个人影响力', '基础分']);
+    expect(ea.steps.find((s) => s.label === '社群规模')).toMatchObject({ ok: true });
+    expect(ea.steps.at(-1)).toMatchObject({ label: '基础分', points: 3 });
+    expect(ea.vpNote).toMatch(/胜点/);
+    // everybody has a story and a reason for their 胜点, and the winners are told apart from the rest
+    for (const l of res.lines) {
+      expect(l.steps.length).toBeGreaterThan(0);
+      expect(l.vpNote).toMatch(/→ \d 胜点/);
+      expect(l.influence).toBe(g.player(l.playerId).influence);
+    }
+    const top = res.lines.filter((l) => res.winnerIds.includes(l.playerId));
+    expect(top.every((l) => l.victoryPoints === 2)).toBe(true);
+  });
+
+  it('immunities show up as a block effect', async () => {
+    const g = scriptedGame(3);
+    const [a, b] = g.players;
+    startTurn(g, a);
+    g.addStatus(b, 'withdrawn', g.newCard('withdrawn'), '自闭');
+    await g.changeInfluence(b, -2, { cause: 'action', source: a, cardId: 'rumor' });
+    expect(fxOf(g, 'block')[0]).toMatchObject({ playerId: 'p1', label: '自闭' });
+    expect(b.influence).toBe(0);
   });
 
   it('passive skills produce a skill effect; active skills announce even when already face-up', async () => {
@@ -143,7 +209,7 @@ describe('explaining unusual moves', () => {
 
 // ── vote to abandon the game ───────────────────────────────────────────────────────────────────
 
-type Client = Socket<ServerToClient, ClientToServer> & { room: RoomView | null; game: GameView | null; vote: VoteView | null; playerId: string; toasts: string[] };
+type Client = Socket<ServerToClient, ClientToServer> & { room: RoomView | null; game: GameView | null; vote: VoteView | null; playerId: string; toasts: string[]; token: string };
 let http: HttpServer;
 let io: Server<ClientToServer, ServerToClient>;
 let url: string;
@@ -181,7 +247,8 @@ async function player(name: string): Promise<Client> {
   c.on('toast', (t) => c.toasts.push(t.text));
   open.push(c);
   await new Promise<void>((r) => c.on('connect', () => r()));
-  const hello = await ask<{ playerId: string }>(c, 'session:hello', { token: `${name}-${Math.random().toString(36).slice(2)}-0123456789`, name });
+  c.token = `${name}-${Math.random().toString(36).slice(2)}-0123456789`;
+  const hello = await ask<{ playerId: string }>(c, 'session:hello', { token: c.token, name });
   c.playerId = hello.data!.playerId;
   return c;
 }
@@ -241,10 +308,30 @@ describe('abandoning a game by vote', () => {
   it('pace is a validated room setting', async () => {
     const host = await player('pacer');
     await ask(host, 'room:create');
-    host.emit('room:settings', { pace: 'epic' });
-    await until(() => host.room?.settings.pace === 'epic');
+    await until(() => host.room?.settings.pace === 'epic'); // the default is the full show
+    host.emit('room:settings', { pace: 'quick' });
+    await until(() => host.room?.settings.pace === 'quick');
     host.emit('room:settings', { pace: 'warp' } as never);
     await new Promise((r) => setTimeout(r, 60));
-    expect(host.room!.settings.pace).toBe('epic');
+    expect(host.room!.settings.pace).toBe('quick');
+  });
+
+  it('game updates carry only the new log lines; a (re)connecting client gets the recent history again', async () => {
+    const { host } = await runningGame(1, 2);
+    await until(() => (host.game?.log.length ?? 0) > 0, 'first state with log');
+    const first = host.game!.log.at(-1)!.seq;
+    host.emit('net:rtt', { ms: 300 }); // makes the server broadcast again without logging anything new
+    await until(() => host.room?.members[0].ping === 300, 'rebroadcast');
+    expect(host.game!.log.every((e) => e.seq > first) || host.game!.log.length === 0).toBe(true); // no repeated history
+    // a second connection for the same player is a fresh client: it gets the history
+    const again = connect(url, { transports: ['websocket'], forceNew: true }) as Client;
+    open.push(again);
+    let got: GameView | null = null;
+    again.on('game:state', (g) => { got = g; });
+    await new Promise<void>((r) => again.on('connect', () => r()));
+    await ask(again, 'session:hello', { token: host.token, name: 'host' });
+    await until(() => !!got, 'state for the new connection');
+    expect(got!.log.length).toBeGreaterThanOrEqual(host.game!.log.length);
+    expect(got!.log[0].seq).toBeLessThanOrEqual(first);
   });
 });

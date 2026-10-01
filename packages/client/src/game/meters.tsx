@@ -11,7 +11,7 @@ export function PulseFloat({ target }: { target: string }) {
   useEffect(() => {
     if (!pulse) return;
     setShown(pulse);
-    const t = setTimeout(() => setShown(null), 1400);
+    const t = setTimeout(() => setShown(null), 3000);
     return () => clearTimeout(t);
   }, [pulse?.key]);
   return (
@@ -23,7 +23,7 @@ export function PulseFloat({ target }: { target: string }) {
           initial={{ opacity: 0, y: 6, scale: 0.8 }}
           animate={{ opacity: 1, y: -18, scale: 1 }}
           exit={{ opacity: 0, y: -30 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.8 }}
         >
           {shown.delta > 0 ? `+${shown.delta}` : shown.delta}
         </motion.span>
@@ -33,8 +33,9 @@ export function PulseFloat({ target }: { target: string }) {
 }
 
 /** 社群规模 track from −10 (小众) to +10 (繁荣) with a yin-yang orb marker. */
-export function CommunityMeter({ value }: { value: number }) {
+export function CommunityMeter({ value: real }: { value: number }) {
   const hit = useStore((s) => s.meterHit);
+  const value = useStore((s) => s.shown.community) ?? real;
   const pct = ((value + COMMUNITY_LIMIT) / (2 * COMMUNITY_LIMIT)) * 100;
   return (
     <div className="cmeter" aria-label={`社群规模 ${value}`}>
@@ -64,7 +65,9 @@ export function CommunityMeter({ value }: { value: number }) {
 }
 
 /** Compact 个人影响力 pips (−cap … +cap). */
-export function InfluenceMeter({ value, cap, playerId, big }: { value: number; cap: number; playerId: string; big?: boolean }) {
+export function InfluenceMeter({ value: real, cap, playerId, big }: { value: number; cap: number; playerId: string; big?: boolean }) {
+  // While an effect that changes this number is still queued, show the number as it was.
+  const value = useStore((s) => s.shown.influence[playerId]) ?? real;
   return (
     <div className={`imeter ${big ? 'imeter--big' : ''}`} title={`个人影响力 ${value}（上限 ±${cap}）`}>
       <span className={`imeter__num ${value > 0 ? 'is-pos' : value < 0 ? 'is-neg' : ''}`}>

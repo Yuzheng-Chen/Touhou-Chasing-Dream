@@ -91,10 +91,18 @@ export async function afterInfluenceChange(g: Game, t: PlayerState, actual: numb
       });
       if (use && t.hand.includes(card)) {
         await g.loseCards(t, [card]);
-        g.toDiscard([card]);
-        g.log(`{p:${t.id}} 打出 {c:expose} 反击 {p:${o.source.id}}`, { type: 'play', playerId: t.id, cardId: 'expose', targetIds: [o.source.id] }, 'major');
-        await g.changeInfluence(o.source, actual, { source: t, cause: 'action', cardId: 'expose' });
-        if (g.officialActive('stb', t)) await g.changeInfluence(t, 1, { source: t, cause: 'official' });
+        const src = o.source;
+        await g.stage(
+          t,
+          `{p:${t.id}} 打出 {c:expose} 反击 {p:${src.id}}`,
+          { type: 'play', playerId: t.id, cardId: 'expose', targetIds: [src.id] },
+          async () => {
+            await g.target(t, [src], 'expose');
+            await g.changeInfluence(src, actual, { source: t, cause: 'action', cardId: 'expose' });
+            if (g.officialActive('stb', t)) await g.changeInfluence(t, 1, { source: t, cause: 'official' });
+          },
+          { finish: () => g.toDiscard([card]) },
+        );
       }
     }
   }
@@ -481,11 +489,17 @@ export async function useSkill(g: Game, p: PlayerState, skill: string) {
       g.use(p, 'kyoei');
       g.reveal(p, '共荣');
       await g.discard(p, [c], '共荣');
-      g.log(`{p:${p.id}} 「共荣」：视为对相邻玩家依次使用 {c:${c.defId}}`, { type: 'play', playerId: p.id, cardId: c.defId }, 'major');
-      for (const t of g.neighbours(p)) {
-        if (!g.targetable(t)) continue;
-        await ACTIONS[c.defId].play({ g, player: p, defId: c.defId, forcedTarget: t });
-      }
+      await g.stage(
+        p,
+        `{p:${p.id}} 「共荣」：视为对相邻玩家依次使用 {c:${c.defId}}`,
+        { type: 'play', playerId: p.id, cardId: c.defId, via: { skill: '共荣', sourceId: p.role } },
+        async () => {
+          for (const t of g.neighbours(p)) {
+            if (!g.targetable(t)) continue;
+            await ACTIONS[c.defId].play({ g, player: p, defId: c.defId, forcedTarget: t });
+          }
+        },
+      );
       return;
     }
     case 'selfdestruct': {
@@ -524,7 +538,7 @@ export async function useSkill(g: Game, p: PlayerState, skill: string) {
       g.use(p, 'condescend');
       g.reveal(p, '居高临下');
       await g.discard(p, cards);
-      g.setCommunity(0);
+      g.setCommunity(0, { cardId: p.role, player: p });
       return;
     }
     case 'follow': {

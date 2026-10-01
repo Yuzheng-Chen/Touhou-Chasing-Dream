@@ -21,6 +21,15 @@ export function ACT(r) {
   // A player with no connection can't usefully act (and the reconnect banner says so).
   if ($('.conn-banner')) return null;
 
+  // The final-settlement show: a bot-like player doesn't wait for it. (e2e/ceremony.mjs does not use this branch.)
+  if (!W.keepCeremony) {
+    const skip = $('.ceremony__skip');
+    if (skip) {
+      click(skip);
+      return 'skip-ceremony';
+    }
+  }
+
   // Role selection overlay.
   const rp = $('.rolepick');
   if (rp) {

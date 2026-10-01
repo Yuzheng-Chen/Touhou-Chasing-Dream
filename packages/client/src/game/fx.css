@@ -72,106 +72,100 @@
 /* pulse — default soft glow */
 .pfx--pulse i { width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; background: radial-gradient(circle, rgba(243, 213, 138, 0.45), transparent 65%); animation-name: p-ring; animation-duration: 0.9s; }
 
-/* ───────── Other effects ───────── */
+/* ═════════ Effects layer (see game/fx/) — transform + opacity only ═════════ */
+.fx > * { grid-area: 1 / 1; }
+
 .fx__flight { position: fixed; z-index: 5; pointer-events: none; margin: -31px 0 0 -22px; }
 .fx__flight .card--sm { --w: 44px; }
-
-.fx__turn {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 42%;
-  z-index: 6;
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
-}
-.fx__turn span {
-  padding: 8px 64px;
-  font-family: var(--font-brush);
-  font-size: 54px;
-  color: var(--gold-bright);
-  letter-spacing: 0.14em;
-  text-shadow: 0 0 24px rgba(243, 213, 138, 0.6), 0 4px 0 rgba(0, 0, 0, 0.5);
-  background: linear-gradient(90deg, transparent, rgba(12, 11, 23, 0.85) 20%, rgba(12, 11, 23, 0.85) 80%, transparent);
-  border-top: 1px solid rgba(216, 178, 90, 0.5);
-  border-bottom: 1px solid rgba(216, 178, 90, 0.5);
-}
 
 .confetti { position: fixed; inset: 0; z-index: 720; pointer-events: none; overflow: hidden; }
 .confetti i { position: absolute; top: -20px; display: block; opacity: 0; animation-name: p-confetti; animation-timing-function: linear; animation-fill-mode: both; }
 @keyframes p-confetti { 0% { opacity: 1; translate: 0 0; } 100% { opacity: 1; translate: 60px 110vh; rotate: 720deg; } }
 
-/* Big community swings shake the board a little. */
+/* Big community swings shake the opponents and the middle of the table a little — never your own hand and controls. */
 @keyframes p-shake { 0%, 100% { transform: translate3d(0, 0, 0); } 20% { transform: translate3d(-7px, 3px, 0); } 40% { transform: translate3d(6px, -3px, 0); } 60% { transform: translate3d(-4px, 2px, 0); } 80% { transform: translate3d(3px, -1px, 0); } }
-.table__main.is-shaking { animation: p-shake 0.45s ease-out; }
+.table__main.is-shaking > .opponents, .table__main.is-shaking > .center { animation: p-shake 0.55s ease-out; }
 
-@media (max-width: 760px), (max-height: 560px) {
-  .fx__turn span { font-size: 34px; padding: 6px 28px; }
-  .pfx { transform: scale(0.7); }
+/* ───────── The stage: the card whose effect is being decided ───────── */
+.stage { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.stage > * { grid-area: 1 / 1; }
+.stage__dim { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(8, 7, 16, 0) 16%, rgba(8, 7, 16, 0.55) 100%); }
+.stage__card { display: flex; flex-direction: column; align-items: center; gap: 12px; will-change: transform; }
+.stage__card .card--lg { --w: clamp(150px, 27vh, 236px); }
+.stage__card .card { box-shadow: 0 0 0 2px rgba(255, 244, 200, 0.9), 0 0 70px rgba(255, 210, 120, 0.7), 0 30px 60px rgba(0, 0, 0, 0.6); }
+.stage__card.is-event .card { box-shadow: 0 0 0 2px rgba(200, 220, 255, 0.9), 0 0 70px rgba(110, 140, 255, 0.7), 0 30px 60px rgba(0, 0, 0, 0.6); }
+.stage__info { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.stage__caption {
+  display: flex; align-items: center; gap: 4px; padding: 6px 18px; border-radius: 999px;
+  background: rgba(12, 11, 23, 0.9); border: 1px solid var(--panel-border); font-size: 16px; white-space: nowrap;
 }
-
-
-/* ═════════ Card slam: rays, aura, shockwaves ═════════ */
-.fx__play { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.fx__rays {
-  position: absolute; left: 50%; top: 44%; width: 980px; height: 980px; margin: -490px 0 0 -490px; z-index: -2; pointer-events: none;
-  background: repeating-conic-gradient(from 0deg, rgba(255, 226, 150, 0.34) 0 5deg, transparent 5deg 15deg);
-  -webkit-mask-image: radial-gradient(circle, #000 6%, transparent 60%); mask-image: radial-gradient(circle, #000 6%, transparent 60%);
-  opacity: 0; animation: rays-spin 7s linear infinite, fade-in-out 1.5s ease-out both; will-change: transform;
-}
-@keyframes rays-spin { to { transform: rotate(360deg); } }
-@keyframes fade-in-out { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0.25; } }
-.fx__aura {
-  position: absolute; left: 50%; top: 44%; width: 560px; height: 560px; margin: -280px 0 0 -280px; z-index: -2; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle, rgba(255, 190, 90, 0.55), transparent 68%); animation: aura-pop 1.2s ease-out both;
-}
-.fx__play--action .fx__aura { background: radial-gradient(circle, rgba(255, 96, 70, 0.6), transparent 68%); }
-.fx__play--event .fx__aura { background: radial-gradient(circle, rgba(90, 120, 255, 0.6), transparent 68%); }
-.fx__play--role .fx__aura { background: radial-gradient(circle, rgba(88, 194, 143, 0.55), transparent 68%); }
-@keyframes aura-pop { 0% { opacity: 0; transform: scale(0.3); } 30% { opacity: 1; transform: scale(1.05); } 100% { opacity: 0.3; transform: scale(1.2); } }
-.fx__cardwrap .card { box-shadow: 0 0 0 2px rgba(255, 244, 200, 0.9), 0 0 70px rgba(255, 210, 120, 0.7), 0 30px 60px rgba(0, 0, 0, 0.6); }
-
-.fx__shock { position: absolute; left: 50%; top: 46%; width: 0; height: 0; z-index: -1; pointer-events: none; --c: #f3d58a; }
-.fx__shock--warm { --c: #ffb06b; }
-.fx__shock--cool { --c: #9aa2ff; }
-.fx__shock i {
-  position: absolute; left: -90px; top: -90px; width: 180px; height: 180px; border-radius: 50%; border: 5px solid var(--c); opacity: 0;
-  box-shadow: 0 0 26px var(--c), inset 0 0 26px var(--c); animation: shock 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-@keyframes shock { 0% { opacity: 0.95; transform: scale(0.15); } 100% { opacity: 0; transform: scale(4.4); } }
-
-/* where an unusual play comes from */
-.fx__via {
+.stage__thinking { display: inline-flex; gap: 3px; margin-left: 8px; }
+.stage__thinking i { width: 6px; height: 6px; border-radius: 50%; background: var(--gold-bright); animation: blink 1.4s infinite; }
+.stage__thinking i:nth-child(2) { animation-delay: 0.25s; }
+.stage__thinking i:nth-child(3) { animation-delay: 0.5s; }
+.dirtag { font-style: normal; margin-left: 8px; padding: 1px 12px; border-radius: 999px; font-weight: 700; background: rgba(255, 255, 255, 0.14); }
+.dirtag--up { background: #c8503b; color: #fff; }
+.dirtag--down { background: #4a52c8; color: #fff; }
+.stage__via {
   display: flex; align-items: center; gap: 12px; padding: 8px 20px 8px 10px; border-radius: 14px;
   background: linear-gradient(90deg, rgba(60, 50, 110, 0.98), rgba(24, 21, 44, 0.98)); border: 1px solid var(--gold-bright);
   box-shadow: 0 0 28px rgba(243, 213, 138, 0.5), 0 10px 24px rgba(0, 0, 0, 0.5);
 }
-.fx__via .card--xs { --w: 44px; }
-.fx__via div { display: flex; flex-direction: column; line-height: 1.35; }
-.fx__via small { font-size: 11px; letter-spacing: 0.2em; color: var(--gold-bright); }
-.fx__via b { font-family: var(--font-brush); font-weight: 400; font-size: 30px; color: #fff; letter-spacing: 0.08em; text-shadow: 0 0 16px rgba(243, 213, 138, 0.7); }
-.fx__via span { font-size: 13px; color: var(--text-dim); }
+.stage__via .card--xs { --w: 44px; }
+.stage__via div { display: flex; flex-direction: column; line-height: 1.35; }
+.stage__via small { font-size: 11px; letter-spacing: 0.2em; color: var(--gold-bright); }
+.stage__via b { font-family: var(--font-brush); font-weight: 400; font-size: 28px; color: #fff; letter-spacing: 0.08em; text-shadow: 0 0 16px rgba(243, 213, 138, 0.7); }
+.stage__via span { font-size: 13px; color: var(--text-dim); }
 
-/* ═════════ Skill activation ═════════ */
+/* the burst as a card lands */
+.fx__play { position: relative; width: 0; height: 0; }
+.fx__rays {
+  position: absolute; left: -490px; top: -516px; width: 980px; height: 980px; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 226, 150, 0.2) 0 5deg, transparent 5deg 15deg);
+  -webkit-mask-image: radial-gradient(circle, #000 6%, transparent 60%); mask-image: radial-gradient(circle, #000 6%, transparent 60%);
+  opacity: 0; animation: rays-spin 14s linear infinite, fade-in-out 2s ease-out both; will-change: transform;
+}
+@keyframes rays-spin { to { transform: rotate(360deg); } }
+@keyframes fade-in-out { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; } }
+.fx__aura {
+  position: absolute; left: -280px; top: -306px; width: 560px; height: 560px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 190, 90, 0.55), transparent 68%); animation: aura-pop 1.8s ease-out both;
+}
+.fx__play--action .fx__aura { background: radial-gradient(circle, rgba(255, 96, 70, 0.6), transparent 68%); }
+.fx__play--event .fx__aura { background: radial-gradient(circle, rgba(90, 120, 255, 0.6), transparent 68%); }
+.fx__play--role .fx__aura { background: radial-gradient(circle, rgba(88, 194, 143, 0.55), transparent 68%); }
+@keyframes aura-pop { 0% { opacity: 0; transform: scale(0.3); } 30% { opacity: 1; transform: scale(1.05); } 100% { opacity: 0; transform: scale(1.25); } }
+
+.fx__shock { position: absolute; left: 0; top: -26px; width: 0; height: 0; pointer-events: none; --c: #f3d58a; }
+.fx__shock--warm { --c: #ffb06b; }
+.fx__shock--cool { --c: #9aa2ff; }
+.fx__shock i {
+  position: absolute; left: -90px; top: -90px; width: 180px; height: 180px; border-radius: 50%; border: 5px solid var(--c); opacity: 0;
+  box-shadow: 0 0 26px var(--c), inset 0 0 26px var(--c); animation: shock 1.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes shock { 0% { opacity: 0.95; transform: scale(0.15); } 100% { opacity: 0; transform: scale(4.4); } }
+.fx__value .fx__shock, .fx__reveal .fx__shock, .fx__dice .fx__shock { top: 0; }
+
+/* ───────── Skills, modifiers, shields ───────── */
 .fx__skill { position: relative; display: flex; align-items: center; justify-content: center; gap: 36px; width: 100%; perspective: 1000px; }
-.fx__skill .fx__ribbon { height: 200px; margin-top: -100px; }
+.fx__ribbon { position: absolute; left: 0; right: 0; top: 50%; height: 160px; margin-top: -80px; background: linear-gradient(90deg, transparent, rgba(12, 11, 23, 0.94) 20%, rgba(12, 11, 23, 0.94) 80%, transparent); border-top: 1px solid rgba(216, 178, 90, 0.4); border-bottom: 1px solid rgba(216, 178, 90, 0.4); }
+.fx__skill .fx__ribbon { height: 260px; margin-top: -130px; }
 .fx__skillcard { position: relative; }
 .fx__skillcard .card { box-shadow: 0 0 0 2px #fff4c8, 0 0 80px rgba(255, 210, 120, 0.75), 0 30px 60px rgba(0, 0, 0, 0.6); }
-.fx__skilltext { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.fx__skilltext { position: relative; display: flex; flex-direction: column; gap: 6px; max-width: min(460px, 42vw); }
 .fx__skilltext small { font-size: 17px; letter-spacing: 0.12em; color: var(--text); }
 .fx__skillname { font-family: var(--font-brush); font-size: 92px; line-height: 1.05; letter-spacing: 0.1em; color: var(--gold-bright); text-shadow: 0 0 36px rgba(243, 213, 138, 0.8), 0 6px 0 rgba(0, 0, 0, 0.5); }
-.fx__skilltext em { font-style: normal; align-self: flex-start; padding: 2px 14px; border-radius: 999px; background: rgba(217, 68, 58, 0.85); font-size: 14px; letter-spacing: 0.12em; }
+.fx__skilldesc { margin: 0; font-size: 17px; line-height: 1.7; color: var(--text); }
 .fx__passive {
-  position: fixed; top: 88px; left: 50%; margin-left: -150px; width: 300px; display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 8px; border-radius: 14px;
+  position: fixed; top: 88px; left: 50%; margin-left: -190px; width: 380px; display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 8px; border-radius: 14px;
   background: linear-gradient(90deg, rgba(40, 35, 72, 0.98), rgba(24, 21, 44, 0.98)); border: 1px solid rgba(154, 168, 255, 0.7); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55); z-index: 8;
 }
 .fx__passive .card--xs { --w: 40px; }
-.fx__passive div { display: flex; flex-direction: column; line-height: 1.3; }
+.fx__passive div { display: flex; flex-direction: column; line-height: 1.35; }
 .fx__passive small { font-size: 11px; color: #b9c3ff; letter-spacing: 0.1em; }
 .fx__passive b { font-family: var(--font-serif); font-size: 20px; color: #fff; }
+.fx__passive span { font-size: 12px; color: var(--text-dim); }
 
-/* ═════════ Rule modifiers ═════════ */
 .fx__mod {
   position: relative; --c: #ffb35e; display: flex; align-items: center; gap: 12px; padding: 8px 26px 8px 10px; border-radius: 999px;
   background: rgba(20, 18, 37, 0.97); border: 2px solid var(--c); box-shadow: 0 0 40px var(--c), 0 12px 30px rgba(0, 0, 0, 0.5);
@@ -182,47 +176,212 @@
 .fx__mod small { font-size: 12px; letter-spacing: 0.15em; color: var(--text-dim); }
 .fx__mod b { font-family: var(--font-serif); font-size: 26px; color: var(--c); text-shadow: 0 0 18px var(--c); }
 
-/* ═════════ Numbers: bigger change, bigger show ═════════ */
+.fx__block { --c: #8db4ff; }
+.blockplate {
+  position: absolute; left: -125px; width: 250px; display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 10px; border-radius: 14px;
+  background: linear-gradient(90deg, rgba(30, 44, 90, 0.98), rgba(18, 22, 48, 0.98)); border: 2px solid var(--c); box-shadow: 0 0 30px rgba(141, 180, 255, 0.6), 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+.fx__block.is-below .blockplate { top: -24px; }
+.fx__block.is-above .blockplate { bottom: 20px; }
+.blockplate__icon { font-size: 26px; }
+.blockplate .card--xs { --w: 34px; }
+.blockplate div { display: flex; flex-direction: column; line-height: 1.3; }
+.blockplate small { font-size: 11px; color: var(--text-dim); }
+.blockplate b { font-family: var(--font-serif); font-size: 19px; color: #fff; }
+.blockplate span { font-size: 12px; color: #b9c8ff; }
+
+/* ───────── Numbers: bigger change, bigger show ───────── */
 .fx__value { --c: #ffb06b; position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .fx__value--down { --c: #9aa2ff; }
+.fx__numhead { font-size: 20px; letter-spacing: 0.4em; color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7); }
 .fx__num { position: relative; display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.fx__num small { font-size: 20px; letter-spacing: 0.4em; color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7); margin-bottom: 4px; }
+.fx__num small { font-size: 13px; letter-spacing: 0.1em; color: #fff; white-space: nowrap; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7); margin-bottom: 4px; }
 .fx__num b { font-family: var(--font-serif); font-weight: 900; font-size: 104px; color: var(--c); text-shadow: 0 0 32px var(--c), 0 6px 0 rgba(0, 0, 0, 0.55); -webkit-text-stroke: 2px rgba(0, 0, 0, 0.35); }
 .fx__num span { margin-top: 6px; font-size: 16px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .tier2 .fx__num b { font-size: 150px; text-shadow: 0 0 48px var(--c), 0 0 90px var(--c), 0 8px 0 rgba(0, 0, 0, 0.55); }
 .tier3 .fx__num b { font-size: 210px; text-shadow: 0 0 60px var(--c), 0 0 130px var(--c), 0 10px 0 rgba(0, 0, 0, 0.55); }
+/* while the calculation is still being told, the number is plain white and modest */
+.fx__value.is-counting .fx__num b, .fx__seatfx.is-counting .fx__num b { font-size: 88px; color: #fff; text-shadow: 0 0 24px rgba(255, 255, 255, 0.35), 0 6px 0 rgba(0, 0, 0, 0.55); }
+.fx__seatfx.is-counting .fx__num b { font-size: 56px; }
+.fx__range { display: flex; align-items: center; gap: 10px; font-family: var(--font-serif); font-size: 22px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.fx__range b { color: var(--c); font-size: 28px; }
+.fx__range i { font-style: normal; color: var(--gold-bright); }
 .fx__src { padding: 4px 18px; border-radius: 999px; background: rgba(12, 11, 23, 0.9); border: 1px solid var(--panel-border); font-size: 15px; color: var(--gold-bright); }
 .fx__huge { position: absolute; top: -130px; font-family: var(--font-brush); font-size: 72px; letter-spacing: 0.12em; color: #fff; text-shadow: 0 0 40px var(--c), 0 6px 0 rgba(0, 0, 0, 0.5); white-space: nowrap; }
-.fx__vignette {
-  position: fixed; inset: 0; z-index: -3; pointer-events: none;
-  background: radial-gradient(ellipse at center, transparent 35%, var(--c) 130%); opacity: 0; animation: vignette 1.2s ease-out both;
-}
+.fx__vignette { position: fixed; inset: 0; z-index: -3; pointer-events: none; background: radial-gradient(ellipse at center, transparent 35%, var(--c) 130%); opacity: 0; animation: vignette 1.8s ease-out both; }
 @keyframes vignette { 0% { opacity: 0; } 15% { opacity: 0.55; } 100% { opacity: 0; } }
-.tier3 .fx__vignette { animation-duration: 1.7s; }
+.tier3 .fx__vignette { animation-duration: 2.4s; }
+
+/* the calculation tape */
+.tape { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; max-width: min(860px, 92vw); margin-top: 4px; }
+.tape__step { display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 14px; background: rgba(20, 18, 37, 0.96); border: 1px solid var(--panel-border); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+.tape__step .card--xs { --w: 30px; }
+.tape__arrow { font-style: normal; color: var(--gold-bright); font-size: 22px; }
+.tape__what { display: flex; flex-direction: column; line-height: 1.25; }
+.tape__what small { font-size: 11px; letter-spacing: 0.08em; color: var(--text-dim); }
+.tape__what b { font-size: 15px; }
+.tape__val { font-family: var(--font-serif); font-weight: 900; font-size: 26px; color: var(--gold-bright); min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
+.tape--compact { flex-direction: column; gap: 4px; max-width: 260px; }
+.tape--compact .tape__step { gap: 6px; padding: 3px 10px 3px 6px; border-radius: 10px; }
+.tape--compact .tape__step .card--xs { --w: 22px; }
+.tape--compact .tape__what small { font-size: 9px; }
+.tape--compact .tape__what b { font-size: 12px; }
+.tape--compact .tape__val { font-size: 18px; }
+.tape--compact .tape__arrow { font-size: 14px; line-height: 0.6; }
 
 .fx__seatfx { position: fixed; z-index: 7; width: 0; height: 0; pointer-events: none; --c: #ffb06b; }
 .fx__seatfx.fx__value--down { --c: #9aa2ff; }
-.fx__seatfx .fx__num { position: absolute; left: -130px; top: -48px; width: 260px; }
-.fx__seatfx .fx__num small { font-size: 13px; letter-spacing: 0.1em; white-space: nowrap; }
+.seatfx__stack { position: absolute; left: -130px; width: 260px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.fx__seatfx.is-below .seatfx__stack { top: -30px; }
+.fx__seatfx.is-above .seatfx__stack { bottom: 24px; }
 .fx__seatfx .fx__num b { font-size: 64px; }
 .fx__seatfx.tier2 .fx__num b { font-size: 88px; }
 .fx__seatfx.tier3 .fx__num b { font-size: 118px; }
 
 /* meter and seats react */
-.cmeter__orb .orb-ring { position: absolute; inset: -10px; border-radius: 50%; border: 3px solid var(--gold-bright); opacity: 0; animation: orb-ring 0.9s ease-out both; pointer-events: none; }
+.cmeter__orb .orb-ring { position: absolute; inset: -10px; border-radius: 50%; border: 3px solid var(--gold-bright); opacity: 0; animation: orb-ring 1.2s ease-out both; pointer-events: none; }
 @keyframes orb-ring { 0% { opacity: 1; transform: scale(0.6); } 100% { opacity: 0; transform: scale(3); } }
 .seat.is-target::before, .myarea.is-target .myarea__row::before {
   content: ''; position: absolute; inset: -4px; border-radius: inherit; pointer-events: none; z-index: 5;
-  border: 3px solid #ff6a5e; box-shadow: 0 0 34px rgba(255, 106, 94, 0.85), inset 0 0 22px rgba(255, 106, 94, 0.4); animation: target-pulse 0.7s ease-in-out 3;
+  border: 3px solid #ff6a5e; box-shadow: 0 0 34px rgba(255, 106, 94, 0.85), inset 0 0 22px rgba(255, 106, 94, 0.4); animation: target-pulse 1.3s ease-in-out 2;
 }
 .myarea__row { position: relative; }
-@keyframes target-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@keyframes target-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+/* ───────── Dice: a real cube ───────── */
+.fx__dice { position: fixed; inset: 0; display: grid; place-items: center; --s: clamp(84px, 15vh, 132px); }
+.fx__dicedim { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 48%, rgba(8, 7, 16, 0.35), rgba(8, 7, 16, 0.78)); }
+.fx__dicetitle { position: absolute; top: 15vh; padding: 8px 26px; border-radius: 999px; background: rgba(12, 11, 23, 0.92); border: 1px solid var(--panel-border); font-size: 20px; letter-spacing: 0.04em; }
+.fx__dicetitle em { font-style: normal; font-family: var(--font-serif); font-weight: 900; color: var(--gold-bright); }
+.dice3d__flight { position: relative; width: var(--s); height: var(--s); margin-top: -14vh; }
+.dice3d__bounce { position: absolute; inset: 0; }
+.dice3d { position: absolute; inset: 0; perspective: 780px; }
+.cube { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; will-change: transform; }
+.cube__face {
+  position: absolute; inset: 0; border-radius: 16%; border: 2px solid #d8b25a; backface-visibility: hidden;
+  background: linear-gradient(145deg, #fffdf6, #e6dbbd); box-shadow: inset 0 0 22px rgba(120, 90, 30, 0.22);
+}
+.cube__face i { position: absolute; width: 20%; height: 20%; margin: -10% 0 0 -10%; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a4660, #14121f); }
+.cube__face i.is-red { width: 28%; height: 28%; margin: -14% 0 0 -14%; background: radial-gradient(circle at 35% 30%, #ff8a7a, #c4352b); }
+.cube__face--1 { transform: rotateY(0deg) translateZ(calc(var(--s) / 2)); }
+.cube__face--6 { transform: rotateY(180deg) translateZ(calc(var(--s) / 2)); }
+.cube__face--2 { transform: rotateY(90deg) translateZ(calc(var(--s) / 2)); }
+.cube__face--5 { transform: rotateY(-90deg) translateZ(calc(var(--s) / 2)); }
+.cube__face--3 { transform: rotateX(90deg) translateZ(calc(var(--s) / 2)); }
+.cube__face--4 { transform: rotateX(-90deg) translateZ(calc(var(--s) / 2)); }
+/* NB: never put filter/opacity<1 on .cube itself — it would flatten the 3-D faces (the die vanished when it came to rest edge-on). */
+.dice3d__bounce.is-rest { filter: drop-shadow(0 0 18px rgba(255, 220, 140, 0.6)); }
+.dice3d__shadow { position: absolute; left: 50%; bottom: -26px; width: calc(var(--s) * 1.1); height: 18px; margin-left: calc(var(--s) * -0.55); border-radius: 50%; background: radial-gradient(rgba(0, 0, 0, 0.75), transparent 70%); }
+.dice3d__flight .fx__shock { top: auto; bottom: -26px; }
+.fx__diceresult { position: absolute; top: calc(50% - 14vh + var(--s) * 0.8); display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.dieresult { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 96px; justify-content: center; }
+.dieresult b { font-family: var(--font-serif); font-weight: 900; font-size: 84px; line-height: 1; color: var(--gold-bright); text-shadow: 0 0 36px currentColor, 0 6px 0 rgba(0, 0, 0, 0.5); }
+.dieresult--good b { color: #7be0b0; }
+.dieresult--bad b { color: #ff8f8f; }
+.dieresult span { font-size: 17px; color: var(--text); }
+.dieresult--wait { font-size: 20px; letter-spacing: 0.2em; color: var(--text-dim); }
+.dots { display: inline-flex; gap: 4px; margin-left: 6px; }
+.dots i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: blink 1.2s infinite; }
+.dots i:nth-child(2) { animation-delay: 0.2s; }
+.dots i:nth-child(3) { animation-delay: 0.4s; }
+.dicelegend { display: flex; gap: 6px; }
+.dicelegend__cell { display: flex; flex-direction: column; align-items: center; min-width: 46px; padding: 4px 8px; border-radius: 10px; background: rgba(12, 11, 23, 0.85); border: 1px solid var(--hairline); color: var(--text-dim); transition: transform 0.3s, opacity 0.3s; }
+.dicelegend__cell small { font-size: 10px; }
+.dicelegend__cell b { font-size: 15px; }
+.dicelegend__cell.is-hit { color: #2a1f08; background: linear-gradient(180deg, #f1d488, #c79a3e); border-color: var(--gold-bright); transform: scale(1.18); }
+
+/* ───────── A role card turns face up ───────── */
+.fx__reveal { position: fixed; inset: 0; display: grid; place-items: center; }
+.fx__revealdim { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(8, 7, 16, 0.8), rgba(8, 7, 16, 0.94)); }
+.fx__revealrow { position: relative; display: flex; align-items: center; gap: 44px; max-width: 94vw; padding: 0 20px; }
+.fx__revealcard { position: relative; flex: none; perspective: 1100px; }
+.fx__revealcard .card--xl { --w: clamp(190px, 38vh, 300px); box-shadow: 0 0 0 2px #fff4c8, 0 0 90px rgba(255, 210, 120, 0.75), 0 30px 60px rgba(0, 0, 0, 0.6); }
+.revealpanel { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; max-width: min(480px, 46vw); }
+.revealpanel small { font-size: 17px; letter-spacing: 0.1em; color: var(--text); }
+.revealpanel__name { margin: 0; font-family: var(--font-brush); font-weight: 400; font-size: 68px; line-height: 1.05; letter-spacing: 0.08em; color: var(--gold-bright); text-shadow: 0 0 36px rgba(243, 213, 138, 0.8), 0 6px 0 rgba(0, 0, 0, 0.5); }
+.revealpanel__faction { padding: 2px 16px; border-radius: 999px; background: rgba(217, 68, 58, 0.85); font-size: 14px; letter-spacing: 0.15em; }
+.revealpanel__gloss { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-dim); }
+.revealpanel__skills { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.revealpanel__skills p { margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); border: 1px solid transparent; font-size: 15px; line-height: 1.65; }
+.revealpanel__skills p.is-hit { background: rgba(243, 213, 138, 0.14); border-color: var(--gold-bright); box-shadow: 0 0 22px rgba(243, 213, 138, 0.3); }
+.revealpanel__skills .skill { margin-right: 8px; }
+
+/* ───────── Target lock-on ───────── */
+.fx__target { position: fixed; left: 50%; top: 50%; width: 0; height: 0; }
+.beam { position: absolute; height: 0; transform-origin: 0 0; }
+.beam__line { position: absolute; left: 0; top: -3px; width: 100%; height: 6px; border-radius: 3px; transform-origin: 0 50%; background: linear-gradient(90deg, rgba(255, 106, 94, 0), #ff6a5e 35%, #fff); box-shadow: 0 0 18px #ff6a5e; }
+.beam__head { position: absolute; right: -4px; top: -13px; width: 0; height: 0; border-left: 26px solid #fff; border-top: 13px solid transparent; border-bottom: 13px solid transparent; filter: drop-shadow(0 0 8px #ff6a5e); }
+.reticle { position: absolute; width: 0; height: 0; --c: #ff6a5e; }
+.reticle__ring { position: absolute; left: -72px; top: -72px; width: 144px; height: 144px; border-radius: 50%; border: 3px solid var(--c); box-shadow: 0 0 24px var(--c), inset 0 0 24px var(--c); }
+.reticle__ring i { position: absolute; background: var(--c); }
+.reticle__ring i:nth-child(1) { left: 50%; top: -14px; width: 3px; height: 26px; margin-left: -1.5px; }
+.reticle__ring i:nth-child(2) { left: 50%; bottom: -14px; width: 3px; height: 26px; margin-left: -1.5px; }
+.reticle__ring i:nth-child(3) { top: 50%; left: -14px; height: 3px; width: 26px; margin-top: -1.5px; }
+.reticle__ring i:nth-child(4) { top: 50%; right: -14px; height: 3px; width: 26px; margin-top: -1.5px; }
+.reticle__flash { position: absolute; left: -90px; top: -90px; width: 180px; height: 180px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 255, 255, 0.85), transparent 70%); }
+.reticle__tag { position: absolute; left: -100px; top: 84px; width: 200px; display: flex; flex-direction: column; align-items: center; padding: 4px 10px; border-radius: 12px; background: rgba(12, 11, 23, 0.94); border: 1px solid var(--c); }
+.reticle__tag small { font-size: 11px; color: var(--text-dim); }
+.reticle__tag b { font-size: 16px; }
+.reticle .fx__shock { top: 0; --c: #ff8f7a; }
+
+/* ───────── Announcements ───────── */
+.fx__banner { position: relative; display: flex; align-items: center; justify-content: center; gap: 30px; width: 100%; perspective: 1000px; }
+.fx__banner .card { box-shadow: 0 0 60px rgba(216, 178, 90, 0.4), 0 30px 60px rgba(0, 0, 0, 0.6); }
+.fx__banner .card--lg { --w: clamp(150px, 27vh, 230px); }
+.fx__banner .card--xl { --w: clamp(190px, 38vh, 300px); }
+.fx__bannertext { position: relative; display: flex; flex-direction: column; gap: 6px; font-family: var(--font-serif); font-size: 18px; max-width: min(520px, 46vw); }
+.fx__bannertext span { font-size: 38px; font-weight: 900; letter-spacing: 0.15em; color: var(--gold-bright); text-shadow: 0 0 24px rgba(216, 178, 90, 0.5); }
+.fx__bannertext em { font-style: normal; font-size: 16px; color: var(--text-dim); letter-spacing: 0.1em; }
+.fx__bannerdesc { margin: 4px 0 0; font-family: var(--font-body); font-size: 17px; line-height: 1.7; color: var(--text); }
+.fx__banner--up .fx__bannertext span { color: #ff9a86; }
+.fx__banner--down .fx__bannertext span { color: #a9b0ff; }
+
+.fx__turn { position: fixed; left: 0; right: 0; top: 40%; z-index: 6; display: flex; flex-direction: column; align-items: center; pointer-events: none; --seat: var(--gold-bright); }
+.fx__turn span {
+  padding: 8px 80px; font-family: var(--font-brush); font-size: 46px; color: var(--seat); letter-spacing: 0.14em; text-shadow: 0 0 22px color-mix(in srgb, var(--seat) 50%, transparent), 0 4px 0 rgba(0, 0, 0, 0.5);
+  background: linear-gradient(90deg, transparent, rgba(12, 11, 23, 0.9) 20%, rgba(12, 11, 23, 0.9) 80%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--seat) 60%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--seat) 60%, transparent);
+}
+.fx__turn small { margin-bottom: 4px; font-size: 14px; letter-spacing: 0.4em; color: var(--text-dim); text-shadow: 0 2px 6px #000; }
+.fx__turn.is-mine { --seat: var(--gold-bright); }
+.fx__turn.is-mine span { font-size: 68px; padding: 12px 110px; }
+
+.fx__round { position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 34px 120px; background: radial-gradient(ellipse at center, rgba(12, 11, 23, 0.94), rgba(12, 11, 23, 0.7) 70%, transparent); }
+.fx__round b { font-family: var(--font-brush); font-weight: 400; font-size: 96px; line-height: 1; letter-spacing: 0.14em; color: var(--gold-bright); text-shadow: 0 0 40px rgba(243, 213, 138, 0.7), 0 6px 0 rgba(0, 0, 0, 0.5); }
+.fx__roundline { width: 360px; height: 2px; background: linear-gradient(90deg, transparent, var(--gold-bright), transparent); transform-origin: 50% 50%; }
+.fx__roundpips { display: flex; gap: 8px; }
+.fx__roundpips i { width: 14px; height: 20px; border-radius: 3px; background: rgba(255, 255, 255, 0.14); }
+.fx__roundpips i.is-on { background: linear-gradient(180deg, #f7df9f, #d4a84c); box-shadow: 0 0 10px rgba(216, 178, 90, 0.7); }
+.fx__round small { font-size: 14px; letter-spacing: 0.3em; color: var(--text-dim); }
+
+.fx__discard { position: fixed; left: 50%; top: 50%; width: 0; height: 0; }
+.fx__discardcard { position: absolute; left: -35px; top: -49px; }
+.fx__discardcard .card--sm { --w: 70px; }
+.fx__discardtag { position: absolute; transform: translateX(-50%); padding: 3px 14px; border-radius: 999px; background: rgba(12, 11, 23, 0.92); border: 1px solid var(--panel-border); font-size: 14px; white-space: nowrap; }
 
 @media (max-width: 760px), (max-height: 560px) {
+  .pfx { transform: scale(0.7); }
+  .fx__skill { flex-direction: column; gap: 12px; }
+  .fx__skilltext { max-width: 88vw; align-items: center; text-align: center; }
   .fx__skillname { font-size: 52px; }
+  .fx__skilldesc { font-size: 14px; }
   .fx__num b { font-size: 72px; }
   .tier2 .fx__num b { font-size: 100px; }
   .tier3 .fx__num b { font-size: 130px; }
   .fx__huge { font-size: 44px; top: -90px; }
-  .fx__rays { width: 640px; height: 640px; margin: -320px 0 0 -320px; }
+  .fx__rays { width: 640px; height: 640px; left: -320px; top: -346px; }
+  .fx__revealrow, .fx__banner { flex-direction: column; gap: 14px; }
+  .revealpanel { max-width: 90vw; align-items: center; text-align: center; }
+  .revealpanel__name { font-size: 40px; }
+  .revealpanel__skills p { font-size: 13px; text-align: left; }
+  .fx__bannertext { max-width: 90vw; align-items: center; text-align: center; }
+  .fx__bannertext span { font-size: 26px; }
+  .fx__bannerdesc { font-size: 14px; }
+  .fx__turn span { font-size: 30px; padding: 6px 28px; }
+  .fx__turn.is-mine span { font-size: 40px; padding: 8px 40px; }
+  .fx__round { padding: 22px 36px; }
+  .fx__round b { font-size: 56px; }
+  .fx__passive { width: 300px; margin-left: -150px; }
+  .tape__step { padding: 4px 10px 4px 6px; }
+  .tape__val { font-size: 20px; }
 }

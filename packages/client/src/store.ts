@@ -1,4 +1,4 @@
-import type { ChatMessage, GameView, LogEntry, RoomView, Tone, VoteView } from '@tcd/shared';
+import { PACE_FACTOR, type ChatMessage, type Fx, type GameView, type LogEntry, type RoomView, type SettleTo, type Tone, type VoteView } from '@tcd/shared';
 import { create } from 'zustand';
 import { sfx } from './audio';
 import { SEAT, request, saveName, savedName, sessionToken, socket } from './net';
@@ -21,6 +21,23 @@ export interface Flight {
 export interface Pulse {
   delta: number;
   key: number;
+}
+
+/** A card standing in the middle of the table while its effect is decided (see Stage). */
+export interface StageCard {
+  key: number;
+  fx: Extract<Fx, { type: 'play' }>;
+  /** Set when the effect is over: where the card flies. It is removed shortly after. */
+  leaving?: { to: SettleTo; toId?: string };
+}
+
+/**
+ * What the meters show while effects are still queued: the number as it was before the effect being played.
+ * `null` / missing = follow the real game state.
+ */
+export interface Shown {
+  community: number | null;
+  influence: Record<string, number>;
 }
 
 interface State {
@@ -54,8 +71,16 @@ interface State {
   vote: VoteView | null;
   /** Bumps on every community change so the meter can flash. */
   meterHit: number;
+  /** Cards standing in the middle while their effect resolves (oldest first). */
+  stage: StageCard[];
+  /** Meter values lagging behind the game state until their effect has played. */
+  shown: Shown;
+  /** The final-settlement show has reached its board (the tutorial coach waits for it). */
+  finale: boolean;
   setMeterHit(): void;
   endFlight(id: number): void;
+  /** Called by the effects layer as each queued effect starts playing. */
+  playFx(fx: Fx): void;
 
   setName(n: string): void;
   setHover(id: string | null): void;
@@ -92,11 +117,50 @@ export const useStore = create<State>((set, get) => ({
   targeted: [],
   vote: null,
   meterHit: 0,
+  stage: [],
+  shown: { community: null, influence: {} },
+  finale: false,
   setMeterHit() {
     set({ meterHit: get().meterHit + 1 });
   },
   endFlight(id) {
     set({ flights: get().flights.filter((f) => f.id !== id) });
+  },
+  playFx(fx) {
+    const st = get();
+    switch (fx.type) {
+      case 'play':
+        set({ stage: [...st.stage, { key: ++pulseSeq, fx }] });
+        break;
+      case 'settle': {
+        // The newest card of that kind leaves the stage.
+        const i = st.stage.findLastIndex((c) => c.fx.cardId === fx.cardId && !c.leaving);
+        if (i < 0) break;
+        const key = st.stage[i].key;
+        set({ stage: st.stage.map((c) => (c.key === key ? { ...c, leaving: { to: fx.to, toId: fx.toId } } : c)) });
+        setTimeout(() => set({ stage: get().stage.filter((c) => c.key !== key) }), 950);
+        break;
+      }
+      case 'target': {
+        const ids = fx.toIds;
+        set({ targeted: ids });
+        setTimeout(() => get().targeted === ids && set({ targeted: [] }), 2600);
+        break;
+      }
+      case 'community':
+        set({
+          shown: { ...st.shown, community: fx.to },
+          pulses: { ...st.pulses, community: { delta: fx.to - fx.from, key: ++pulseSeq } },
+          shake: Math.abs(fx.to - fx.from) >= 3 ? st.shake + 1 : st.shake,
+        });
+        break;
+      case 'influence':
+        set({
+          shown: { ...st.shown, influence: { ...st.shown.influence, [fx.playerId]: fx.to } },
+          pulses: { ...st.pulses, [fx.playerId]: { delta: fx.to - fx.from, key: ++pulseSeq } },
+        });
+        break;
+    }
   },
 
   setName(n) {
@@ -116,10 +180,12 @@ export const useStore = create<State>((set, get) => ({
   toast(text, tone) {
     const id = ++toastSeq;
     set({ toasts: [...get().toasts, { id, text, tone }] });
-    setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), 3800);
+    setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), 5200);
   },
   shiftFx() {
-    set({ fxQueue: get().fxQueue.slice(1) });
+    const fxQueue = get().fxQueue.slice(1);
+    // When nothing is left to play, the meters catch up with the real state.
+    set(fxQueue.length ? { fxQueue } : { fxQueue, shown: idleShown() });
   },
   answer(promptId, value) {
     // Swallow accidental double submits of the same prompt.
@@ -130,6 +196,9 @@ export const useStore = create<State>((set, get) => ({
     socket.emit('game:answer', { promptId, value });
   },
 }));
+
+// Browser tests (e2e/dice.mjs …) can reach the store with ?e2e in the URL, e.g. to play a chosen effect on demand.
+if (new URLSearchParams(location.search).has('e2e')) (window as unknown as { __tcd: unknown }).__tcd = { useStore };
 
 // ── session / auto-join ───────────────────────────────────────
 
@@ -161,68 +230,63 @@ function hello() {
 // ── game state ingestion ──────────────────────────────────────
 
 /** Log effects that get an on-screen moment (played one after another by FxLayer). */
-export const FX_TYPES = ['play', 'dice', 'event', 'official', 'reveal', 'skill', 'mod', 'community', 'influence'];
-/** In "reduce motion" mode there is no playback, so these sounds fire straight away instead. */
-const QUICK_SOUND: Record<string, Parameters<typeof sfx>[0]> = { play: 'play', dice: 'dice', event: 'event', official: 'official', reveal: 'reveal', skill: 'reveal' };
+export const FX_TYPES: Fx['type'][] = [
+  'play', 'settle', 'target', 'mod', 'block', 'skill', 'dice', 'community', 'influence', 'event', 'official', 'reveal', 'turn', 'round', 'discard',
+];
+
+/** How much a queued effect's duration is stretched or squeezed by the room's pace (a test server squeezes it to nothing). */
+export const paceFactor = () => {
+  const room = useStore.getState().room;
+  return room?.fast ? 0.04 : PACE_FACTOR[room?.settings.pace ?? 'epic'];
+};
+
+const idleShown = (): Shown => ({ community: null, influence: {} });
+
+/** Most log lines kept on the client (the server only sends what is new). */
+const LOG_KEEP = 300;
 
 function ingestGame(game: GameView | null) {
   const st = useStore.getState();
   if (!game) {
-    useStore.setState({ game: null, lastSeq: 0, fxQueue: [] });
+    useStore.setState({ game: null, lastSeq: 0, fxQueue: [], stage: [], shown: idleShown() });
     return;
   }
-  const fresh = st.lastSeq === 0 || (st.game && st.game.id !== game.id);
-  const newest = game.log.at(-1)?.seq ?? 0;
-  if (fresh) {
-    useStore.setState({ game, lastSeq: newest, fxQueue: [] });
+  const sameGame = !!st.game && st.game.id === game.id;
+  // First state of this game (joined, reloaded, rematch): its recent log is history, not something to replay as effects.
+  if (!sameGame) {
+    useStore.setState({ game, lastSeq: game.log.at(-1)?.seq ?? 0, fxQueue: [], stage: [], shown: idleShown() });
     return;
   }
+  // Updates carry only new log lines: join them to the history we already hold.
   const incoming = game.log.filter((e) => e.seq > st.lastSeq);
-  const pulses = { ...st.pulses };
-  const reduced = document.documentElement.classList.contains('reduce-motion');
+  game = { ...game, log: [...st.game!.log, ...incoming].slice(-LOG_KEEP) };
+  const newest = game.log.at(-1)?.seq ?? st.lastSeq;
   const flights = [...st.flights];
-  let shake = st.shake;
-  let targeted: string[] | null = null;
+  const shown: Shown = { community: st.shown.community, influence: { ...st.shown.influence } };
   for (const e of incoming) {
     const fx = e.fx;
     if (!fx) continue;
-    if (!reduced && fx.type === 'draw') flights.push({ id: ++pulseSeq, from: 'deck', to: fx.playerId, n: fx.count });
-    if (!reduced && fx.type === 'transfer') flights.push({ id: ++pulseSeq, from: fx.fromId, to: fx.toId, n: fx.count });
-    if (!reduced && fx.type === 'community' && Math.abs(fx.to - fx.from) >= 3) shake++;
-    if (fx.type === 'target') targeted = fx.toIds;
-    if (fx.type === 'community') pulses.community = { delta: fx.to - fx.from, key: ++pulseSeq };
-    if (fx.type === 'influence') pulses[fx.playerId] = { delta: fx.to - fx.from, key: ++pulseSeq };
-    if (reduced) {
-      if (fx.type in QUICK_SOUND) sfx(QUICK_SOUND[fx.type]);
-      if (fx.type === 'community' || (fx.type === 'influence' && fx.playerId === st.playerId)) sfx((fx.type === 'community' ? fx.to - fx.from : fx.to - fx.from) > 0 ? 'up' : 'down');
-    }
+    if (fx.type === 'draw') flights.push({ id: ++pulseSeq, from: 'deck', to: fx.playerId, n: fx.count });
+    if (fx.type === 'transfer') flights.push({ id: ++pulseSeq, from: fx.fromId, to: fx.toId, n: fx.count });
+    // The meters keep showing the old number until the effect that changes it is played.
+    if (fx.type === 'community' && shown.community === null) shown.community = fx.from;
+    if (fx.type === 'influence' && !(fx.playerId in shown.influence)) shown.influence[fx.playerId] = fx.from;
     if (fx.type === 'draw' && fx.playerId === st.playerId) sfx('draw');
   }
 
-  // Personal cues: my turn begins / the game ends.
-  const me = st.playerId;
-  if (me && game.currentPlayerId === me && st.game?.currentPlayerId !== me) sfx('turn');
-  if (me && game.phase === 'finished' && st.game?.phase !== 'finished') sfx(game.result?.winnerIds.includes(me) ? 'win' : 'lose');
-
-  const queued = reduced ? [] : incoming.filter((e) => e.fx && FX_TYPES.includes(e.fx.type));
+  const queued = incoming.filter((e) => e.fx && FX_TYPES.includes(e.fx.type));
   const queue = [...st.fxQueue, ...queued];
+  // A tab that fell far behind drops its oldest animations rather than replaying minutes of history.
+  const overflow = queue.length > 24;
   useStore.setState({
     game,
     lastSeq: Math.max(st.lastSeq, newest),
-    pulses,
     flights: flights.slice(-6),
-    shake,
-    // A tab that fell far behind drops its oldest animations rather than replaying minutes of history.
-    fxQueue: queue.length > 14 ? queue.slice(-5) : queue,
+    fxQueue: overflow ? queue.slice(-6) : queue,
+    ...(overflow ? { stage: [], shown: idleShown() } : { shown }),
   });
-  if (targeted && !reduced) {
-    const ids = targeted;
-    useStore.setState({ targeted: ids });
-    setTimeout(() => {
-      if (useStore.getState().targeted === ids) useStore.setState({ targeted: [] });
-    }, 2200);
-  }
 }
+
 // ── socket wiring ─────────────────────────────────────────────
 // Latency: time a ping/ack round trip, smooth it, and report it so every player's seat can show it.
 let pingTimer: ReturnType<typeof setInterval> | undefined;

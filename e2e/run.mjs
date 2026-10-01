@@ -309,7 +309,13 @@ class Test {
     assert.equal(winners.length, res.winnerIds.length, 'winner rows match result');
     assert.ok(tables[0].every((r) => Number(r.vp) >= 0 && Number(r.vp) <= 2));
     if (res.winnerIds.length) assert.ok(tables[0].filter((r) => r.vp === '2').length >= 1, 'a winner takes 2 victory points');
-    if (this.spectator) assert.equal(await this.spectator.page.locator('.results__sheet').count(), 1, 'spectator sees results too');
+    if (this.spectator) {
+      // The spectator has no driver: it sits through the settlement show (and may skip it like anybody else).
+      await this.spectator.page.waitForSelector('.ceremony', { timeout: 10_000 });
+      await this.spectator.page.click('.ceremony__skip', { timeout: 5000 }).catch(() => {});
+      await this.spectator.page.waitForSelector('.results__sheet', { timeout: 10_000 });
+      assert.equal(await this.spectator.page.locator('.results__sheet').count(), 1, 'spectator sees results too');
+    }
     // Everyone's role is public now.
     for (const s of this.seats) assert.ok(s.state.players.every((p) => p.role), 'all roles revealed at the end');
     await this.seats[0].page.screenshot({ path: `${OUT}/${this.n}p-${label}-results.png` });

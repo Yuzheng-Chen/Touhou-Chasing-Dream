@@ -89,10 +89,10 @@ export function SettingsPanel({ room }: { room: RoomView }) {
           />
         </Card>
 
-        <Card title="演出节奏" sub="出牌、技能与数值变化的停留时间">
+        <Card title="演出节奏" sub="出牌、掷骰、翻牌与数值变化的停留时间；越慢越有悬念">
           <Segmented
             value={s.pace}
-            options={[{ value: 'quick', label: '快速' }, { value: 'normal', label: '标准' }, { value: 'epic', label: '华丽' }]}
+            options={[{ value: 'quick', label: '快速' }, { value: 'normal', label: '标准' }, { value: 'epic', label: '华丽（默认）' }]}
             onChange={(v) => set({ pace: v as RoomSettings['pace'] })}
             disabled={!editable}
           />

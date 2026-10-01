@@ -36,7 +36,10 @@ function useStickyScroll(dep: unknown) {
 }
 
 function Log() {
-  const log = useStore((s) => s.game?.log ?? []);
+  const all = useStore((s) => s.game?.log ?? []);
+  // The log doesn't run ahead of the animations: a line appears once the effect it belongs to has played.
+  const holdFrom = useStore((s) => s.fxQueue[0]?.seq ?? Infinity);
+  const log = all.filter((e) => e.text && e.seq < holdFrom);
   const { ref, onScroll } = useStickyScroll(log.at(-1)?.seq);
   return (
     <div className="log" ref={ref} onScroll={onScroll}>

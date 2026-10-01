@@ -17,6 +17,8 @@ interface Ctx {
   prompt: Prompt | null;
   /** Action cards this player has played so far. */
   played: number;
+  /** The final-settlement show has reached its board. */
+  finale: boolean;
 }
 
 interface Tip {
@@ -131,7 +133,7 @@ const TIPS: Tip[] = [
     body: '游戏即将结束：每位玩家依次把扣置的事件牌正向打出，这时不能再用手牌和技能。之后统计胜负。',
   },
   {
-    id: 'end', when: (c) => c.g.phase === 'finished', finale: true,
+    id: 'end', when: (c) => c.g.phase === 'finished' && c.finale, finale: true,
     title: '教学完成！',
     body: '看看你是否满足条件：个人影响力 ≥ 0，且社群规模 ≥ 0（你是繁荣阵营）。基础玩法就是这些了——去和朋友开一局真正的游戏吧！',
   },
@@ -140,6 +142,7 @@ const TIPS: Tip[] = [
 export function Coach() {
   const game = useStore((s) => s.game);
   const playerId = useStore((s) => s.playerId);
+  const finaleShown = useStore((s) => s.finale);
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
   const [off, setOff] = useState(false);
   const shown = useRef<string | null>(null);
@@ -153,8 +156,9 @@ export function Coach() {
     return {
       g: game, me, myTurn: game.currentPlayerId === playerId, prompt: game.prompt,
       played: game.log.filter((e) => e.fx?.type === 'play' && e.fx.playerId === playerId).length,
+      finale: finaleShown,
     };
-  }, [game, playerId]);
+  }, [game, playerId, finaleShown]);
 
   const tip = ctx && !off ? TIPS.find((t) => !seen.has(t.id) && t.when(ctx)) : undefined;
 
@@ -181,13 +185,16 @@ export function Coach() {
       setDecide(document.querySelector('.decide')?.getBoundingClientRect() ?? null);
     };
     measure();
+    // A new decision panel slides in: re-measure while it settles so the tip steps out of its way at once.
+    const settle = [60, 160, 320, 600].map((ms) => setTimeout(measure, ms));
     const t = setInterval(measure, 250);
     window.addEventListener('resize', measure);
     return () => {
+      settle.forEach(clearTimeout);
       clearInterval(t);
       window.removeEventListener('resize', measure);
     };
-  }, [tip?.id, tip?.target]);
+  }, [tip?.id, tip?.target, game?.prompt?.id]);
 
   if (!game || off) return off ? <ResumeCoach onClick={() => setOff(false)} /> : null;
   const done = seen.size;
@@ -217,7 +224,7 @@ export function Coach() {
       const left = Math.min(Math.max(12, rect.left + rect.width / 2 - W / 2), window.innerWidth - W - 12);
       const top = below ? rect.bottom + 14 : rect.top - 14 - h;
       // Never cover the decision panel: if the anchored spot would, use the dock.
-      const hits = decide && !(left + W < decide.left || left > decide.right || top + h < decide.top || top > decide.bottom);
+      const hits = decide && !(left + W < decide.left - 8 || left > decide.right + 8 || top + h < decide.top - 8 || top > decide.bottom + 8);
       style = hits ? dock : below ? { left, top, width: W } : { left, bottom: window.innerHeight - rect.top + 14, width: W };
     }
   }

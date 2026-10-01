@@ -92,6 +92,7 @@ class Room {
       status: this.status,
       youId,
       tutorial: this.tutorial,
+      fast: TEST_FAST,
     };
   }
 
@@ -105,11 +106,26 @@ class Room {
     for (const pid of this.audience()) this.hub.emitTo(pid, 'room:state', this.view(pid));
   }
 
+  /** Last log entry each player has been sent (per game): updates carry only the log lines that are new. */
+  private logSent = new Map<string, { game: string; seq: number }>();
+
+  /** A (re)connecting client has no log yet: the next update gives it the recent history again. */
+  resyncLog(pid: string) {
+    this.logSent.delete(pid);
+  }
+
   broadcastGame() {
     const g = this.game;
     for (const pid of this.audience()) {
+      if (!g) {
+        this.hub.emitTo(pid, 'game:state', null);
+        continue;
+      }
       const isMember = this.members.some((m) => m.id === pid);
-      this.hub.emitTo(pid, 'game:state', g ? buildView(g, isMember ? pid : null, (id) => this.hub.online(id), (id) => this.hub.ping(id)) : null);
+      const sent = this.logSent.get(pid);
+      const since = sent && sent.game === g.s.id ? sent.seq : undefined;
+      this.logSent.set(pid, { game: g.s.id, seq: g.s.logSeq });
+      this.hub.emitTo(pid, 'game:state', buildView(g, isMember ? pid : null, (id) => this.hub.online(id), (id) => this.hub.ping(id), since));
     }
   }
 
@@ -285,6 +301,7 @@ export class RoomHub {
       if (m && r?.game) r.game.setAuto(m.id, false);
       ack({ ok: true, data: { playerId: s.playerId, roomId: s.roomId } });
       if (r) {
+        r.resyncLog(s.playerId);
         r.broadcastRoom();
         r.broadcastGame();
         for (const msg of r.chat.slice(-50)) sock.emit('chat:message', msg);
@@ -359,6 +376,7 @@ export class RoomHub {
       // Not a member of a running game → spectator.
       session.roomId = r.id;
       ack({ ok: true, data: { roomId: r.id } });
+      r.resyncLog(session.playerId);
       r.broadcastRoom();
       r.broadcastGame();
       for (const msg of r.chat.slice(-50)) sock.emit('chat:message', msg);

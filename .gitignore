@@ -7,3 +7,4 @@ tools/art/out/
 tools/art/raw/
 .DS_Store
 e2e/out/
+tools/fonts/.cache/

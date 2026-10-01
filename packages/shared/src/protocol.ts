@@ -103,19 +103,67 @@ export interface FxVia {
   text?: string;
 }
 
+/**
+ * One step of "how this number came about", shown as a tape under the big number:
+ * 基础 −3 → 煽风点火 偏移量+1 (−4) → 东方辉针城 ×2 (−8) → 社群规模上限 (−5).
+ * `value` is the running total after the step.
+ */
+export interface CalcStep {
+  label: string;
+  text: string;
+  value: number;
+  /** Card behind the step (event / official / role), for its little icon. */
+  sourceId?: string;
+}
+
+/** Where a card on the table's centre stage goes when its effect is over. */
+export type SettleTo = 'discard' | 'delay' | 'chain' | 'keep' | 'gift';
+
 export type Fx =
-  | { type: 'play'; playerId: string; cardId: string; as?: string; targetIds?: string[]; via?: FxVia }
+  /** A card on the centre stage (stays until its `settle`). Event cards come in with the direction they take. */
+  | { type: 'play'; playerId: string; cardId: string; as?: string; targetIds?: string[]; via?: FxVia; direction?: EventDirection }
+  | { type: 'settle'; playerId: string; cardId: string; to: SettleTo; toId?: string }
   | { type: 'target'; fromId: string; toIds: string[]; cardId?: string }
   | { type: 'mod'; label: string; amount: string; sourceId?: string; playerId?: string }
+  | { type: 'block'; playerId: string; label: string; text: string; sourceId?: string }
   | { type: 'skill'; playerId: string; roleId: string; skill: string; passive?: boolean; reveals?: boolean }
   | { type: 'dice'; playerId: string; face: number; judge: JudgeKind; result: number | boolean }
-  | { type: 'community'; from: number; to: number; cardId?: string; by?: string }
-  | { type: 'influence'; playerId: string; from: number; to: number; cardId?: string; by?: string }
+  | { type: 'community'; from: number; to: number; cardId?: string; by?: string; calc?: CalcStep[] }
+  | { type: 'influence'; playerId: string; from: number; to: number; cardId?: string; by?: string; calc?: CalcStep[] }
   | { type: 'event'; playerId: string; cardId: string; direction: EventDirection }
   | { type: 'official'; cardId: string }
-  | { type: 'reveal'; playerId: string; roleId: string }
+  | { type: 'reveal'; playerId: string; roleId: string; skill?: string }
+  | { type: 'turn'; playerId: string; round: number }
+  | { type: 'round'; round: number; total: number }
   | { type: 'draw'; playerId: string; count: number }
+  | { type: 'discard'; playerId: string; cardIds: string[] }
   | { type: 'transfer'; fromId: string; toId: string; count: number };
+
+/**
+ * How long the table lingers on each effect (ms, at "标准" pace). The server pauses this long after logging the effect
+ * and the client holds its queue this long, so what is on screen and what the game is doing stay in step.
+ */
+export function fxMs(fx: Fx): number {
+  const tier = (n: number) => (Math.abs(n) >= 5 ? 2 : Math.abs(n) >= 3 ? 1 : 0);
+  switch (fx.type) {
+    case 'play': return fx.via ? 2700 : 1900;
+    case 'settle': return 900;
+    case 'target': return 2000;
+    case 'mod': return 1500;
+    case 'block': return 1600;
+    case 'skill': return fx.passive ? 1400 : fx.reveals ? 5600 : 2500;
+    case 'dice': return 5200;
+    case 'community': return 1700 + [0, 500, 1100][tier(fx.to - fx.from)] + 650 * Math.max(0, (fx.calc?.length ?? 1) - 1);
+    case 'influence': return 1500 + [0, 350, 800][tier(fx.to - fx.from)] + 650 * Math.max(0, (fx.calc?.length ?? 1) - 1);
+    case 'event': return 2600;
+    case 'official': return 3200;
+    case 'reveal': return 5600;
+    case 'turn': return 1700;
+    case 'round': return 2000;
+    case 'discard': return 1000;
+    default: return 0;
+  }
+}
 
 export interface LogEntry {
   seq: number;
@@ -194,6 +242,16 @@ export interface PlayerView {
   oshiCount: number;
 }
 
+/** One line of the final-settlement story for a player ("社群规模 +3 ≥ 0 ✓"). */
+export interface ScoreStep {
+  label: string;
+  text: string;
+  /** ✓ / ✗ for conditions; undefined for plain facts. */
+  ok?: boolean;
+  /** Points this step adds to the score. */
+  points?: number;
+}
+
 export interface ScoreLine {
   playerId: string;
   roleId: string;
@@ -204,6 +262,11 @@ export interface ScoreLine {
   total: number;
   victoryPoints: number;
   reason: string;
+  influence: number;
+  /** How the score came about, in the order the reveal ceremony tells it. */
+  steps: ScoreStep[];
+  /** Why this many 胜点. */
+  vpNote: string;
 }
 
 export interface GameResult {
@@ -272,10 +335,10 @@ export interface RoomSettings {
 
 export const DEFAULT_SETTINGS: RoomSettings = {
   roleChoices: 3, promptTimeout: 60, botDelay: 900,
-  rounds: 0, startingHand: 2, firstPlayer: 'random', balancedRoles: true, allowSpectators: true, pace: 'normal',
+  rounds: 0, startingHand: 2, firstPlayer: 'random', balancedRoles: true, allowSpectators: true, pace: 'epic',
 };
-/** Multiplier on the server's effect pauses. */
-export const PACE_FACTOR = { quick: 0.55, normal: 1, epic: 1.45 } as const;
+/** Multiplier on every effect's duration (server pauses and client playback alike). */
+export const PACE_FACTOR = { quick: 0.55, normal: 0.8, epic: 1 } as const;
 
 /** A vote among the humans at the table (currently only: abandon the game and return to the room). */
 export interface VoteView {
@@ -312,6 +375,8 @@ export interface RoomView {
   youId: string;
   /** This room is a coached tutorial game. */
   tutorial: boolean;
+  /** The server skips all cosmetic pauses (tests): clients squeeze their effects too. */
+  fast: boolean;
 }
 
 export interface ChatMessage {

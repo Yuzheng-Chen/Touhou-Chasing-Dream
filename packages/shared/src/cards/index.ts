@@ -27,3 +27,5 @@ export const roleDef = (id: string) => cardDef(id) as RoleCardDef;
 
 /** Public URL of a card's illustration (served from client/public/art). */
 export const cardArtUrl = (id: string) => `/art/cards/${id}.webp`;
+/** Small version (240 px wide) for cards shown at hand/seat size, and the instant placeholder for big previews. */
+export const cardThumbUrl = (id: string) => `/art/cards/${id}.s.webp`;

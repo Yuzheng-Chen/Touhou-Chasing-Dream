@@ -7,15 +7,22 @@
     <title>逐梦东方圈</title>
     <meta name="description" content="逐梦东方圈 · 在线多人卡牌游戏" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;700;900&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Fonts are self-hosted subsets (see tools/fonts); only the first slices are preloaded, nothing blocks rendering. -->
+    <link rel="preload" href="/fonts/ma-shan-zheng-400-0.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/noto-serif-sc-900-0.woff2" as="font" type="font/woff2" crossorigin />
+    <style>
+      /* Shown instantly, before any script has arrived (slow connections). React replaces it. */
+      html, body { margin: 0; height: 100%; background: #141225; }
+      .boot { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 18px; color: #f3d58a; font-family: 'Ma Shan Zheng', 'Noto Serif SC', 'STKaiti', 'KaiTi', serif; }
+      .boot b { font-weight: 400; font-size: clamp(44px, 9vw, 84px); letter-spacing: 0.08em; }
+      .boot i { width: 160px; height: 3px; border-radius: 2px; background: rgba(243, 213, 138, 0.18); position: relative; overflow: hidden; }
+      .boot i::after { content: ''; position: absolute; inset: 0; width: 40%; background: #f3d58a; animation: boot 1.3s ease-in-out infinite; }
+      @keyframes boot { 0% { transform: translateX(-100%); } 100% { transform: translateX(260%); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot"><b>逐梦东方圈</b><i></i></div></div>
+    <noscript>这个游戏需要启用 JavaScript。</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
 import {
   ROLE_CARDS, STARTING_HAND, actionDef, eventDef, officialDef, roleDef,
-  type CardInstance, type FxVia, type TurnMove,
+  type CardInstance, type FxVia, type SettleTo, type TurnMove,
 } from '@tcd/shared';
 import { ACTIONS } from './actions.js';
 import { decideDirection, resolveEvent } from './events.js';
@@ -110,7 +110,7 @@ async function playRound(g: Game) {
   s.round += 1;
   s.phase = 'official';
   s.turnIdx = null;
-  g.log(`第 ${s.round} 轮`, undefined, 'round');
+  await g.show(`第 ${s.round} 轮`, { type: 'round', round: s.round, total: g.endTarget }, 'round');
   const first = g.players[s.firstIdx];
   const guesses = await Roles.researcherGuess(g);
   await revealOfficial(g, first);
@@ -146,7 +146,7 @@ async function playTurn(g: Game, p: PlayerState, idx: number) {
   s.turn = newTurn(p);
   const t = s.turn;
   s.phase = 'turnStart';
-  g.log(`{p:${p.id}} 的回合`, undefined, 'round');
+  await g.show(`{p:${p.id}} 的回合`, { type: 'turn', playerId: p.id, round: s.round }, 'round');
 
   // 人类的本质 arrives.
   if (p.pendingGift.length) {
@@ -189,7 +189,7 @@ async function playTurn(g: Game, p: PlayerState, idx: number) {
 function checkSick(g: Game, p: PlayerState, card: CardInstance): boolean {
   if (!eventDef(card.defId).forced) return false;
   p.turnEvent = null;
-  g.log(`{p:${p.id}} 抽到了 {c:${card.defId}}，立即结束回合！`, { type: 'event', playerId: p.id, cardId: card.defId, direction: 'none' }, 'major');
+  g.showLater(`{p:${p.id}} 抽到了 {c:${card.defId}}，立即结束回合！`, { type: 'event', playerId: p.id, cardId: card.defId, direction: 'none' }, 'major');
   g.addStatus(p, 'sick', card, '大病一场');
   if (g.turn?.playerId === p.id) g.turn.ended = true;
   return true;
@@ -464,40 +464,49 @@ export async function playCard(g: Game, p: PlayerState, uid: string, as: string,
       : { skill: '东方非想天则', sourceId: 'soku' };
   } else if (card.defId === 'human_nature') source = { skill: '人类的本质', sourceId: 'human_nature' };
   else if (as !== card.defId) source = { skill: '东方鬼形兽', sourceId: 'wbawc' };
-  g.log(
+  let to: SettleTo = 'discard';
+  let delayed = false;
+  await g.stage(
+    p,
     `{p:${p.id}} 打出 {c:${card.defId}}${as !== card.defId ? ` 视作 {c:${as}}` : ''}`,
     { type: 'play', playerId: p.id, cardId: card.defId, as: as !== card.defId ? as : undefined, via: source },
-    'major',
+    async () => {
+      if (t.actionsPlayed === 3 && g.officialActive('ufo', p)) {
+        g.log('「东方星莲船」：第三张行动牌，抽一张', undefined, 'minor');
+        await g.draw(p, 1);
+      }
+      // 东方黑·黑料
+      if (p.role === 'anti_fan' && ['expose', 'police', 'rumor'].includes(as)) {
+        if (!p.roleRevealed && (await g.confirm(p, '黑料：翻开角色牌？此后每次打出挂裱/出警/造谣时个人影响力+1', { cardId: 'anti_fan' }))) {
+          g.reveal(p, '黑料');
+        }
+        if (p.roleRevealed) await g.changeInfluence(p, 1, { source: p, cause: 'skill' });
+      }
+      if (d.category === 'delay') {
+        delayed = true;
+        to = 'delay';
+        g.s.delayZone.push({ card, ownerId: p.id, effect: as });
+        g.log(`{c:${as}} 进入延时区，将在下一张事件牌生效时触发`, undefined, 'minor');
+        return;
+      }
+      await ACTIONS[as].play({ g, player: p, defId: as });
+    },
+    {
+      to: () => (card.defId === 'human_nature' && !delayed ? 'gift' : to),
+      toId: () => (card.defId === 'human_nature' && !delayed ? g.next(p).id : undefined),
+      finish: () => {
+        if (delayed) return;
+        if (d.category === 'group') t.groupPlayed.push(card.uid);
+        if (card.defId === 'human_nature') {
+          const nxt = g.next(p);
+          nxt.pendingGift.push(card);
+          g.log(`{c:human_nature} 交付给 {p:${nxt.id}}，将在其回合开始时加入手牌`, undefined, 'minor');
+        } else {
+          g.toDiscard([card]);
+        }
+      },
+    },
   );
-  await g.pause(1500);
-  if (t.actionsPlayed === 3 && g.officialActive('ufo', p)) {
-    g.log('「东方星莲船」：第三张行动牌，抽一张', undefined, 'minor');
-    await g.draw(p, 1);
-  }
-  // 东方黑·黑料
-  if (p.role === 'anti_fan' && ['expose', 'police', 'rumor'].includes(as)) {
-    if (!p.roleRevealed && (await g.confirm(p, '黑料：翻开角色牌？此后每次打出挂裱/出警/造谣时个人影响力+1', { cardId: 'anti_fan' }))) {
-      g.reveal(p, '黑料');
-    }
-    if (p.roleRevealed) await g.changeInfluence(p, 1, { source: p, cause: 'skill' });
-  }
-  if (d.category === 'delay') {
-    g.s.delayZone.push({ card, ownerId: p.id, effect: as });
-    g.log(`{c:${as}} 进入延时区，将在下一张事件牌生效时触发`, undefined, 'minor');
-    return;
-  }
-  try {
-    await ACTIONS[as].play({ g, player: p, defId: as });
-  } finally {
-    if (d.category === 'group') t.groupPlayed.push(card.uid);
-    if (card.defId === 'human_nature') {
-      const nxt = g.next(p);
-      nxt.pendingGift.push(card);
-      g.log(`{c:human_nature} 交付给 {p:${nxt.id}}，将在其回合开始时加入手牌`, undefined, 'minor');
-    } else {
-      g.toDiscard([card]);
-    }
-  }
 }
 
 // ════════════════════════════════════════════════════════════════════

@@ -1,0 +1,77 @@
+/* ───────── Final settlement ceremony (Results.tsx) ───────── */
+.ceremony { display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; padding: 0; background: radial-gradient(ellipse at 50% 40%, rgba(33, 29, 59, 0.94), rgba(6, 5, 14, 0.98)); }
+.ceremony__bar { display: flex; align-items: center; gap: 14px; padding: 14px 22px; }
+.ceremony__title { font-family: var(--font-brush); font-weight: 400; font-size: 34px; letter-spacing: 0.12em; color: var(--gold-bright); margin-right: auto; }
+.ceremony__dots { display: flex; gap: 6px; }
+.ceremony__dots i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.15); transition: background 0.4s, transform 0.4s; }
+.ceremony__dots i.is-done { background: var(--gold); }
+.ceremony__dots i.is-now { background: var(--gold-bright); transform: scale(1.5); box-shadow: 0 0 12px var(--gold-bright); }
+
+/* the community's verdict */
+.verdict { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 20px; }
+.verdict small { font-size: 22px; letter-spacing: 0.3em; color: var(--text-dim); }
+.verdict > b { font-family: var(--font-serif); font-weight: 900; font-size: clamp(120px, 24vh, 240px); line-height: 1; color: #fff; text-shadow: 0 0 60px currentColor; }
+.verdict--prosper > b { color: #ff9a86; }
+.verdict--niche > b { color: #a9b0ff; }
+.verdict__sides { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+.verdict__sides span { padding: 8px 22px; border-radius: 14px; font-size: 18px; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--hairline); }
+.verdict__sides em { font-style: normal; font-weight: 700; margin-right: 10px; }
+.verdict__sides .is-ok { border-color: #58c28f; color: #b6f0d3; }
+.verdict__sides .is-bad { color: var(--text-faint); opacity: 0.7; }
+.verdict p { margin: 8px 0 0; color: var(--text-dim); letter-spacing: 0.15em; }
+
+/* one player */
+.pbeat { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 0 clamp(16px, 4vw, 60px) 18px; }
+.pbeat__main { flex: 1; display: flex; align-items: center; justify-content: center; gap: clamp(24px, 5vw, 70px); min-height: 0; }
+.pbeat__card { flex: none; display: flex; flex-direction: column; align-items: center; gap: 12px; perspective: 1000px; }
+.pbeat__card .card--lg { --w: clamp(150px, 34vh, 260px); box-shadow: 0 0 0 2px #fff4c8, 0 0 70px rgba(255, 210, 120, 0.55), 0 30px 60px rgba(0, 0, 0, 0.6); }
+.pbeat__faction { padding: 3px 16px; border-radius: 999px; background: rgba(217, 68, 58, 0.85); font-size: 14px; letter-spacing: 0.12em; }
+.pbeat__story { display: flex; flex-direction: column; gap: 12px; width: min(560px, 54vw); min-height: 0; }
+.pbeat__who { display: flex; flex-direction: column; gap: 2px; }
+.pbeat__who small { font-size: 13px; letter-spacing: 0.3em; color: var(--text-dim); }
+.pbeat__who b { font-family: var(--font-serif); font-size: clamp(34px, 6vh, 54px); line-height: 1.1; }
+.pbeat__who span { color: var(--text-dim); font-size: 15px; }
+.pbeat__who em { font-style: normal; color: var(--text); }
+.pbeat__steps { display: flex; flex-direction: column; gap: 6px; }
+.cstep { display: grid; grid-template-columns: 92px 1fr auto auto; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--hairline); font-size: 15px; line-height: 1.5; }
+.cstep__label { font-size: 12px; letter-spacing: 0.12em; color: var(--text-dim); }
+.cstep__mark { font-style: normal; font-size: 24px; font-weight: 900; }
+.cstep.is-ok { border-color: rgba(88, 194, 143, 0.55); }
+.cstep.is-ok .cstep__mark { color: #58c28f; }
+.cstep.is-bad { border-color: rgba(239, 107, 107, 0.55); }
+.cstep.is-bad .cstep__mark { color: #ef6b6b; }
+.cstep__pts { font-family: var(--font-serif); font-size: 24px; color: var(--gold-bright); }
+.ptotal { display: flex; align-items: baseline; gap: 14px; }
+.ptotal span { font-size: 16px; letter-spacing: 0.3em; color: var(--text-dim); }
+.ptotal b { font-family: var(--font-serif); font-weight: 900; font-size: clamp(64px, 12vh, 110px); line-height: 1; color: var(--gold-bright); text-shadow: 0 0 36px rgba(243, 213, 138, 0.6); min-width: 1.2ch; font-variant-numeric: tabular-nums; }
+.ptotal.is-zero b { color: var(--text-faint); text-shadow: none; }
+.ptotal small { color: var(--text-dim); }
+.vp { align-self: flex-start; display: flex; align-items: center; gap: 14px; padding: 8px 22px; border-radius: 14px; border: 3px solid var(--text-faint); background: rgba(12, 11, 23, 0.9); }
+.vp b { font-family: var(--font-brush); font-weight: 400; font-size: 38px; letter-spacing: 0.1em; color: var(--text-dim); }
+.vp span { font-size: 14px; color: var(--text-dim); }
+.vp--1 { border-color: #9aa2ff; }
+.vp--1 b { color: #c4c9ff; }
+.vp--2 { border-color: var(--gold-bright); box-shadow: 0 0 40px rgba(243, 213, 138, 0.55); background: linear-gradient(90deg, rgba(80, 60, 20, 0.95), rgba(20, 17, 8, 0.95)); }
+.vp--2 b { color: var(--gold-bright); text-shadow: 0 0 24px rgba(243, 213, 138, 0.8); font-size: 46px; }
+.vp--2 span { color: var(--text); }
+
+.pbeat__done { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; min-height: 40px; }
+.donechip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--hairline); font-size: 13px; }
+.donechip .card--xs { --w: 24px; }
+.donechip em { font-style: normal; font-family: var(--font-serif); font-weight: 900; color: var(--gold-bright); }
+.donechip i { font-style: normal; color: var(--text-dim); font-size: 12px; }
+
+/* the board */
+.ceremony .results__sheet { align-self: center; margin: auto; flex: none; max-height: calc(100% - 32px); overflow: auto; }
+.results__crown { margin: 6px 0 0; font-family: var(--font-brush); font-size: 40px; letter-spacing: 0.1em; color: var(--gold-bright); text-shadow: 0 0 30px rgba(243, 213, 138, 0.6); }
+.rline__note { font-size: 12px; color: var(--text-dim); }
+
+@media (max-width: 760px), (max-height: 600px) {
+  .pbeat__main { flex-direction: column; gap: 10px; overflow-y: auto; justify-content: flex-start; padding-top: 6px; }
+  .pbeat__story { width: 100%; }
+  .pbeat__card .card--lg { --w: 120px; }
+  .cstep { grid-template-columns: 1fr auto auto; }
+  .cstep__label { grid-column: 1 / -1; }
+  .ceremony__title { font-size: 24px; }
+  .ceremony__bar { flex-wrap: wrap; padding: 10px 14px; }
+}

@@ -28,9 +28,15 @@ $t="$env:USERPROFILE\tools"; $env:Path="$t\node;$t\python312;$t\python312\Script
 | Unit + integration tests (≈2 s) | `npm test` |
 | Typecheck everything | `npm run typecheck` |
 | Real-browser multiplayer test | `npm run e2e -- --players 4 --games 2` (builds first; `--players all` = 3…8) |
-| Real-mouse UX regression (hover, glossary, settings, ping, tutorial) | `node e2e/ux.mjs` |
+| Real-mouse UX regression (hover, glossary, gallery search/sort, settings, ping, tutorial, OS reduce-motion) | `node e2e/ux.mjs` |
+| 3-D dice rest on the rolled face | `node e2e/dice.mjs` |
+| Final-settlement show (verdict → one player at a time → board) | `node e2e/ceremony.mjs` |
+| Your hand must not move during other players' turns (real-time pacing, ~2 min) | `node e2e/hand.mjs` |
+| Effects at real pace: screenshots of every kind + "a card never vanishes from the stage" | `node e2e/fxshots.mjs --budget 150` → `e2e/out/fx-*.png` |
+| Slow-network load (400 kbit/s, no third-party hosts, brotli, small first screen, thumbnails) | `node e2e/perf.mjs` |
+| Rebuild web fonts (subset + sliced woff2) / card thumbnails | `python tools/fonts/build.py` / `python tools/art/thumbs.py` |
 | Chaos test: N players + random real-mouse input | `node e2e/monkey.mjs --players 4 --seed 7` (the seed replays a failure) |
-| Everything (types, tests, e2e 3–8p, ux, monkey, console, phone) | `npm run check` |
+| Everything (types, tests, e2e 3–8p, ux, ceremony, hand, perf, effects, monkey, console, phone) | `npm run check` |
 | Bot-vs-bot balance sim | `npm run sim -w @tcd/server -- 2000 5` (games, players) |
 | Production build / run | `npm run build` then `npm start` (serves client + WS on `PORT`, default 3000) |
 | Deploy on VPS | `DOMAIN=game.example.com docker compose -f deploy/docker-compose.yml up -d --build` |
@@ -53,24 +59,28 @@ packages/server   Authoritative engine + Socket.IO rooms (Express serves the bui
   src/engine/roles.ts    role triggers (called from Game primitives) + action-phase skills + alt plays (当作X打出)
   src/engine/officials.ts revealOfficial (花映塚 / 凭依华); other officials are queried inline via g.officialActive(id)
   src/engine/scoring.ts  win conditions, bonuses, 胜点
-  src/engine/view.ts     buildView(): hides hands, face-down roles/events, others' prompts
+  src/engine/view.ts     buildView(): hides hands, face-down roles/events, others' prompts; the log is sent as a delta (only lines the player has not got)
   src/engine/bot.ts      heuristic bot (AI seats AND 托管 for absent humans AND fuzzing); never throws
   src/rooms.ts           RoomHub: sessions (token → playerId), rooms (4-char code), bots, host controls + validated settings, chat,
                          reconnect, offline 托管, latency (net:ping / net:rtt), emotes, tutorial room (room:tutorial)
 packages/client   React 19 + Vite + zustand + motion
-  src/store.ts          socket wiring; fx queue + meter "pulses"; sounds; auto-join (?auto=); reports status to /local parent
+  src/store.ts          socket wiring; fx queue, the centre `stage`, `shown` meter values; sounds; log accumulation (server sends deltas); auto-join (?auto=); reports status to /local parent
   src/net.ts            socket, session token, `?as=` identity namespace, prefs
   src/audio.ts          synthesised sound effects (WebAudio, no assets) + mute
   src/cards/Card.tsx    the card component. Each KIND has its own silhouette/colour/tag (see "Card kinds"); keyword highlight; long-press preview on touch
   src/ui/Overlays.tsx   CardPreview (placed in a layout effect from the tracked pointer) + GlossList side boxes; toasts; connection banner
   src/ui/Signal.tsx     latency bars + ms
-  src/game/*            Table, Seat, Center, MyArea (hand), prompt.tsx (every decision UI), Results, SidePanel, Emotes, Shortcuts,
-                        Fx.tsx + Burst.tsx + fx.css (card-specific particle effects, card flights, turn banner, confetti), Coach.tsx (tutorial)
-  src/screens/*         Home, Lobby + SettingsPanel, Sheets (guide / gallery / settings), Guide (illustrated rules), LocalSeats (/local console)
-  public/art/…          generated illustrations
+  src/game/*            Table, Seat, Center, MyArea (hand), prompt.tsx (every decision UI), SidePanel, Emotes, Shortcuts, Coach.tsx (tutorial),
+                        Results.tsx (the final-settlement show), Burst.tsx + fx.css (particle presets, effect CSS), ceremony.css
+  src/game/fx/          the effects layer: index (queue runner) · Stage (the card standing in the middle) · NumberFx (calculation tape + number slams) ·
+                        DiceFx (3-D die) · SkillFx (reveal / skills / modifiers / shields) · TargetFx (lock-on) · Banners (turn, round, official) · Flights
+  src/screens/*         Home, Lobby + SettingsPanel, Sheets (settings; lazy-loads Guide + Gallery), Gallery (search / sort / filter), Guide (illustrated rules),
+                        LocalSeats (/local console, lazy)
+  public/art/…          generated illustrations (`cards/<id>.webp` 640 px + `cards/<id>.s.webp` 240 px thumbnails), public/fonts/ self-hosted font slices
 e2e/               Playwright drivers: run.mjs (N independent players), local.mjs (/local console), mobile.mjs (responsive), driver.mjs (the "human")
 scripts/local.mjs  `npm run local`
-tools/art          ComfyUI pipeline (see "Art")
+tools/art          ComfyUI pipeline (see "Art") + thumbs.py
+tools/fonts        build.py: subsets Noto Serif SC / Ma Shan Zheng into unicode-range slices (public/fonts + styles/fonts.css)
 deploy/            docker-compose + Caddy (auto-HTTPS), systemd unit alternative
 ```
 
@@ -116,15 +126,20 @@ deploy/            docker-compose + Caddy (auto-HTTPS), systemd unit alternative
 | Rooms | `test/rooms.test.ts` | real sockets: room codes, capacity 8, host-only actions, kick, host transfer, reconnect by token, spectators, chat flood |
 | Browser e2e | `e2e/run.mjs` | N independent browser contexts play full games through the UI: lobby → role pick → game → scoring → rematch → 2nd game; spectator; reload, real network loss, 25 s absence → 托管 → return; privacy invariant on every frame; 0 console errors |
 | Tabs e2e | `e2e/tabs.mjs` | `?as=` gives tabs of ONE browser profile separate identities; reload keeps the seat |
-| Effects | `test/effects.test.ts` | fx carry who/what caused each change; modifiers/skills/targets announced; move `why`/`reveals`; prompt `reveals`; abort vote over sockets; pace validation |
+| Effects | `test/effects.test.ts` | fx carry who/what caused each change and its calculation (`calc` steps, 辉针城 ×2, caps); a card stays on the stage until `settle`; immunities → `block`; score story (`ScoreLine.steps`); move `why`/`reveals`; prompt `reveals`; abort vote over sockets; pace validation; the log is sent as a delta |
 | Vote e2e | `e2e/vote.mjs` | two browser players: refusal keeps the game, cooldown, unanimous vote returns both to the room, a new game starts |
 | UX e2e | `e2e/ux.mjs` | real mouse: no layout/paint-property animations and no backdrop blur (jank); hover preview sits beside the pointer from its FIRST frame, clears when the gallery closes; glossary boxes present/absent as expected; the four card kinds are visually distinct; custom rounds; latency indicator; emote bubble; the whole coached tutorial (tips never cover the decision panel) |
+| Ceremony e2e | `e2e/ceremony.mjs` | after a game: verdict → each player once (steps, total, 胜点) → board; "next" / "skip" work |
+| Dice e2e | `e2e/dice.mjs` | injects dice effects through the `?e2e` store hook: for every face the cube rests showing exactly that face (hit-test), the result text and legend are right |
+| Hand e2e | `e2e/hand.mjs` | real-time game: while other players act, no hand card moves (the bug was side columns of auto width re-centring the hand) |
+| Effects e2e | `e2e/fxshots.mjs` | real-time game, screenshots of every effect kind; a card standing on the stage never fades or vanishes before its settle |
+| Perf e2e | `e2e/perf.mjs` | 400 kbit/s link: title screen < 400 KB / 25 s, only same-origin requests, brotli, thumbnails not full pictures, no bulk full-size downloads |
 | Monkey e2e | `e2e/monkey.mjs` | 3–8 independent players finish a game while a per-seat monkey hovers, clicks, presses keys and resizes at random: no page errors, no "undefined/NaN" text, no lingering preview |
 | Console e2e | `e2e/local.mjs` | `/local` with 4–8 seats in one window plays a game; seats are isolated |
 | Responsive | `e2e/mobile.mjs` | phone/landscape/tablet/laptop: no horizontal overflow, decision panel on-screen |
 
 Server knobs used by e2e (env): `TCD_TEST_FAST=1` (no cosmetic pauses), `TCD_PROMPT_TIMEOUT=0` (seconds; default 60),
-`TCD_OFFLINE_AUTO_MS=3000` (default 25000). The e2e "human" is `e2e/driver.mjs` `ACT()` — it only clicks what a player could click;
+`TCD_OFFLINE_AUTO_MS=3000` (default 25000). A fast server also sets `RoomView.fast`, which makes the client squeeze its effect durations to 4 %. The e2e "human" is `e2e/driver.mjs` `ACT()` — it only clicks what a player could click;
 decision UI exposes `data-prompt-id`, `data-kind`, `data-min`, `data-max` for it. Failures leave screenshots in `e2e/out/`.
 
 ## Card kinds, glossary, tutorial, settings
@@ -143,24 +158,43 @@ decision UI exposes `data-prompt-id`, `data-kind`, `data-min`, `data-max` for it
 * **Jank rules** (a user reported twitching backgrounds on Edge and Brave): animate only transform/opacity; never `backdrop-filter`; never animate
   box-shadow/filter (animate the opacity of a pseudo-element instead); hidden /local seats and background tabs get `html.paused`. `ux.mjs` audits
   `document.getAnimations()` and computed styles. Real GPU smoothness can only be judged on real hardware (headless uses software rendering).
+  **There is no "reduce motion" option and no `prefers-reduced-motion` CSS**: shortening every `animation-duration` to ~0 ms (the usual snippet) makes
+  *infinite* animations loop thousands of times a second — the real cause of the "twitching background / spinning logo / trembling cover cards" reports from
+  players whose OS has animations switched off. `ux.mjs` emulates `reducedMotion: reduce` and fails on any looping animation faster than 400 ms.
 * **Latency**: the client times a `net:ping` ack every 3 s, smooths it and reports `net:rtt`; the server exposes `RoomMember.ping` / `PlayerView.ping`
   (re-broadcast only on a ≥ 25 ms change). **Emotes**: whitelist `EMOTES` in rooms.ts and `ui/emotes.ts` on the client; 1 per 1.2 s.
-* **Effects pipeline** (what makes the table feel alive): the engine logs entries with an `Fx`: `play` (with `via` = where an unusual play comes from:
-  a role skill, 东方非想天则, 人类的本质, 东方鬼形兽), `target`, `skill` (active/passive, via `g.skillFx` / `g.skill`, and automatically from
-  `g.reveal(p, skillName)`), `mod` (煽风点火 +1, 辉针城 ×2, 心绮楼/噩梦日记/游场 — announced by `EventCtx`), `community` / `influence` (carry `cardId` + `by`).
-  `store.ingestGame` queues them; `game/Fx.tsx` plays them one after another: card slam with rays/aura/shockwave, a "via" plate, skill banner, modifier chip that flies
-  into the meter, and number slams scaled by size (|Δ| 1–2 / 3–4 / ≥5 → tier 1/2/3: bigger digits, more rings, vignette, shake, "社群沸腾!"). The server lingers
-  after each (`Game.pause`, scaled by the room's `pace` quick/normal/epic) so animations and game state stay roughly in step; tests run `fast` (no pauses).
-  Seat highlighting for targets comes from `target` fx. Sounds fire at playback (`Fx.tsx`), not at ingest.
-* **Explaining moves** (`TurnMove.why`, `.reveals`): `flow.listMoves` / `roles.skillMoves` attach a title/text/source card to every non-obvious option
+* **Effects pipeline** (what makes the table feel alive; read before touching `game/fx/`): every effect is a `Fx` attached to a log entry; shared `fxMs(fx)`
+  (protocol.ts) says how long the table lingers on it. The **server** pauses that long after logging it (`Game.show`, scaled by the room's `pace`:
+  epic 1 (default) / normal 0.8 / quick 0.55; tests run `fast`), the **client** (`game/fx/index.tsx`) holds its queue for the same time — so picture and game stay in step.
+  Effects that are logged synchronously (a reveal, a passive skill) add to `Game.owed`, paid by the next pause or prompt.
+  * **Stage**: `Game.stage()` logs `play` (card on the centre stage — action cards, and events with `direction`), runs the effect, then logs `settle` (`to`: discard /
+    delay / chain / keep / gift) and only then moves the card in the state. The client keeps the card in the middle (`store.stage`, `game/fx/Stage.tsx`) for the whole
+    decision (targets, reactions, numbers — shows "…" while its owner is deciding), steps aside while numbers/dice/reveals take the middle, flies to its pile on `settle`.
+    Nested plays (墨菲定律, 挂裱 counter) stack. A 60 s watchdog clears a stage whose `settle` got lost.
+  * `target` (`g.target`): beam from the card to each target seat + reticle. `dice`: a real 3-D cube thrown from the roller's seat, ~5 s, result only after it rests,
+    legend of the judgement table (gotcha: never put `filter` / `opacity` on the `.cube` — it flattens the 3-D faces and the die vanishes edge-on). `skill`/`reveal`: a role turning face-up flips in the middle of everyone's screen with its whole text (`RevealFx`).
+    `block` (自闭 / 备受瞩目 …): shield at the seat. `discard`: face-up cards fly to the pile. `turn` / `round`: bands. `mod`: only for modifiers that stop a change (事先科普).
+  * **Number changes carry their calculation**: `changeInfluence/Community` build `calc: CalcStep[]` (printed number → each modifier → caps/floors); `EventCtx.comm/inf`
+    add 煽风点火 / 辉针城 / 心绮楼 …; for action cards `Game.n()` remembers a 辉针城 doubling. With ≥ 2 steps the client tells them one by one (tape) and the number lands
+    after the last; tiers by |Δ| (1–2 / 3–4 / ≥ 5) scale the slam. Meters (`store.shown`) and the log panel hold back until the effect that changes them has played.
+  * Sounds fire at playback. `log` lines with empty text (settle) are not shown. Draw/transfer flights are not queued (they play on arrival).* **Explaining moves** (`TurnMove.why`, `.reveals`): `flow.listMoves` / `roles.skillMoves` attach a title/text/source card to every non-obvious option
   (role skills granting 当作X, officials, copies). The play menu shows it and hovering previews the source card. Moves with `reveals` (an active skill
   while face-down) open `RevealConfirm`; prompts about your own hidden role carry `Prompt.reveals` (set in `Game.ask` when `cardId === who.role`) and show a warning.
 * **Abort vote** (`vote:start` / `vote:cast` / `vote:state`, `Room.startVote`): any seated human may propose "中止本局并回到房间"; every *online, non-托管* human must agree
   (proposer counts yes; offline/托管 players don't block); a refusal or the 30 s timeout cancels it (45 s cooldown per proposer). Tutorial rooms just leave.
   UI: `game/Vote.tsx`; test: `e2e/vote.mjs` + `test/effects.test.ts`.
 * **Card effects**: `game/Burst.tsx` maps each action card to a CSS particle preset (rings, coins, flash, siren, smoke, flames, clash, swap, shield, mirror,
-  bubbles, paper, sparkle). Draw/transfer log entries become card flights; community swings ≥ 4 shake the board; winners get confetti. "Reduce motion"
-  (Settings, or the OS setting) disables all of it.
+  bubbles, paper, sparkle). Draw/transfer log entries become card flights; community swings ≥ 3 shake the opponents and the centre (never your own area); winners get confetti.
+* **Final settlement show** (`game/Results.tsx`): after the last effects, the community verdict, then every player from the lowest result to the winner — role flips, the
+  story of the score (`ScoreLine.steps`: conditions ticked ✓/✗, base score, bonus), the total counting up, 胜点 stamped with its reason (`vpNote`) — then the board. Skippable.
+  The tutorial coach waits for the board (`store.finale`) before its closing tip.
+* **Gallery** (`screens/Gallery.tsx`): tabs (角色/行动/事件/官作/全部), search over name + effect text + category + subtitle (all words must match), sort (default / name / count / group),
+  group chips. `/` focuses the search box.
+* **Network performance** (play on a bad link): self-hosted font slices (`tools/fonts/build.py`; body text uses system CJK fonts), card thumbnails `*.s.webp` (hand/seat sizes;
+  large previews layer full picture over thumbnail), thumbnails only are warmed in the background and not on data-saver/slow links, brotli + gzip precompressed assets
+  (`client/scripts/precompress.mjs`, served by `server/src/index.ts` with immutable caching), vendor chunks + lazy chunks (Guide, Gallery, Coach, Results, /local),
+  Socket.IO `perMessageDeflate`, log sent as a delta (`buildView(..., logSince)`, `Room.logSent`; the client merges in `store.ingestGame`, new connections get a recent tail),
+  an instant splash in `index.html`. `e2e/perf.mjs` guards it.
 
 ## Local multi-seat (`/local`)
 
@@ -212,7 +246,7 @@ Generated locally with ComfyUI + Animagine XL 4.0 (SDXL, 832×1216, 28 steps, CF
 3. Smarter bots (the current one steers 社群规模 by faction and values cards, but doesn't plan, bluff or use most skills well).
 4. Reveal skills usable "at any phase" are only offered during the action phase.
 5. Game state is in memory: a server restart ends running games (lobby/rooms too). Persisting needs an event log + replay (engine is a coroutine).
-6. Card-flight animations between seats for transfers/draws (`Fx` `draw` / `transfer` exist but aren't animated yet).
+6. Draw/transfer flights are not part of the effect queue (they fly on arrival, so they can run slightly ahead of a long effect still playing).
 7. Sound is synthesised and minimal; real music/SFX would lift the feel. Phone layout is functional, not yet beautiful. Hand-drawn per-card animation
    (beyond the shared particle presets) would be the next step for the most iconic cards.
 8. Post-game replay of the log; in-game tutorial / tooltips for first-time players; localisation (strings are hard-coded Chinese).

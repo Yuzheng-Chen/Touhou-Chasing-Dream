@@ -35,7 +35,7 @@ async function pickTarget(ctx: ActionCtx, filter?: (t: PlayerState) => boolean):
   const t = await ctx.g.choosePlayer(ctx.player, `「${d.name}」：指定一名${d.target === 'other' ? '其他' : ''}玩家`, cands, {
     cardId: ctx.defId, body: d.text,
   });
-  ctx.g.log(`{p:${ctx.player.id}} 指定了 {p:${t.id}}`, { type: 'target', fromId: ctx.player.id, toIds: [t.id], cardId: ctx.defId }, 'minor');
+  await ctx.g.target(ctx.player, [t], ctx.defId);
   return t;
 }
 

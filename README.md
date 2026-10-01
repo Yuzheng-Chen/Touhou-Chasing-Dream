@@ -22,12 +22,18 @@ Create a room, share the 4-letter code (or the `/r/CODE` link), add AI players i
 * **Cards:** hover any card (long-press on a phone) for a large view; terms that need explaining (判定 kinds, 拼点, 扣置 …) and other cards it
   mentions get side boxes, like Slay the Spire's keywords. Each kind of card has its own shape: red rounded **行动**, blue arched **事件**,
   gold landscape **官作**, vertical-name **角色**.
-* **Effects:** every card slams onto the table with its own effect; an unusual play says where it comes from ("角色技能「传教」: 把「白嫖」当作「传教」打出");
-  skills, rule modifiers (煽风点火 +1 …) and every change to 社群规模 or 个人影响力 get an effect that grows with the size of the change. The play menu explains
-  why an option exists (hover it to preview the source card), and anything that would flip your role card asks for confirmation first.
+* **Effects:** a played card stands in the middle of the table for as long as its effect is being decided — targets are locked with a beam, dice are a real 3-D
+  throw everyone watches, a role card that turns face up flips in the middle of every screen with its whole text — and flies to its pile when it is done. Every change
+  to 社群规模 or 个人影响力 shows how the number came about (printed value → 煽风点火 / 辉针城 … → result) before it lands. An unusual play says where it comes from
+  ("角色技能「传教」: 把「白嫖」当作「传教」打出"). The play menu explains why an option exists (hover it to preview the source card), and anything that would flip
+  your role card asks for confirmation first. The pace is a room setting (华丽 by default).
+* **Final scoring** is a show: the community's verdict, then each player one at a time from last to first — role flipping, every condition ticked, base score, bonus,
+  total, 胜点 and why — then the winner.
+* **Gallery:** search names, effects and keywords; sort and filter by category.
+* **Slow connections:** the title screen is ~200 KB, fonts and card pictures are loaded in small slices/thumbnails, everything text is brotli-compressed and cached for good.
 * **Leaving a game:** 中止本局 proposes abandoning the game and returning to the room; every online player must agree.
 * **Table:** latency bars for every player, emotes (😀), keyboard shortcuts (Space = end action, 1–9 = play card, L = log/chat),
-  card-specific effects (switch off with ⚙ → 减少动画), sound with volume.
+  sound with volume.
 
 ## Test with several human players on one computer
 
@@ -64,6 +70,8 @@ npm test                        # ~110 engine/room/glossary tests in ~2 s
 npm run e2e -- --players 4      # real browsers: N independent players play complete games (builds first)
 npm run e2e -- --players all    # 3, 4, 5, 6, 7 and 8 players, two games each (with rematch)
 node e2e/ux.mjs                 # real-mouse UX regression: hover, glossary, settings, latency, emotes, the whole tutorial
+node e2e/ceremony.mjs           # the final-scoring show, beat by beat
+node e2e/perf.mjs               # title screen over a 400 kbit/s link
 node e2e/monkey.mjs --players 5 # chaos: random hovering/clicking/keys/resizing while a full game is played
 npm run check                   # typecheck + unit tests + every e2e suite
 ```

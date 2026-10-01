@@ -1,12 +1,17 @@
 import type { GameView, PlayerView } from '@tcd/shared';
 import type { Game } from './Game.js';
 
+/** How much log history a freshly connected client gets (later updates only carry what is new). */
+export const LOG_TAIL = 120;
+
 /** Project the authoritative state into what `viewerId` may see (null = spectator). */
 export function buildView(
   g: Game,
   viewerId: string | null,
   connected: (id: string) => boolean,
   ping: (id: string) => number | null = () => null,
+  /** Log entries the viewer already has: only newer ones are sent (the client keeps its own history). */
+  logSince?: number,
 ): GameView {
   const s = g.s;
   const finished = s.phase === 'finished';
@@ -59,7 +64,7 @@ export function buildView(
     officialCopyOf: s.officialCopyOf,
     chainZone: s.chainZone,
     delayZone: s.delayZone.map((d) => ({ card: d.card, ownerId: d.ownerId })),
-    log: s.log.slice(-150),
+    log: logSince === undefined ? s.log.slice(-LOG_TAIL) : s.log.filter((e) => e.seq > logSince).slice(-LOG_TAIL),
     me: me && {
       id: me.id,
       hand: me.hand,

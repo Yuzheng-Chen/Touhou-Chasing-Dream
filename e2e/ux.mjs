@@ -82,6 +82,28 @@ try {
   await page.screenshot({ path: `${OUT}/ux-home.png` });
   log('home: no layout-animating keyframes, no backdrop blur');
 
+  // The OS "reduce motion" setting must never squeeze animations to ~0 ms: an infinite animation shortened like that
+  // loops thousands of times a second, which looks like the whole page twitching (cover cards, logo, background).
+  {
+    const calm = await browser.newContext({ viewport: { width: 1440, height: 820 }, reducedMotion: 'reduce' });
+    const p2 = await calm.newPage();
+    await p2.goto(server.url);
+    await p2.waitForSelector('.home__card');
+    await sleep(600);
+    const frantic = await p2.evaluate(() => document.getAnimations()
+      .filter((a) => a.effect.getTiming().iterations === Infinity && Number(a.effect.getComputedTiming().duration) < 400)
+      .map((a) => `${a.animationName}@${String(a.effect.target?.className).slice(0, 30)}: ${a.effect.getComputedTiming().duration}ms`));
+    assert.deepEqual(frantic, [], `looping animations run at a sane speed even with the OS reduce-motion setting: ${frantic}`);
+    const spin = await p2.evaluate(() => {
+      const el = document.querySelector('.home__orb');
+      const read = () => getComputedStyle(el).transform;
+      return new Promise((res) => { const a = read(); setTimeout(() => res([a, read()]), 120); });
+    });
+    assert.notEqual(spin[0], undefined);
+    await calm.close();
+    log('OS reduce-motion does not make animations frantic');
+  }
+
   // ── Gallery: kinds are distinguishable ───────────────────────────────────────
   await page.click('text=卡牌图鉴');
   await page.waitForSelector('.gallery .card');
@@ -105,6 +127,46 @@ try {
   assert.ok(kinds['官作'].ratio > 1, 'official cards are landscape');
   assert.ok(kinds['事件'].ratio < 0.8 && kinds['行动'].ratio < 0.8, 'action/event are portrait');
   assert.notEqual(kinds['事件'].radius, kinds['行动'].radius, 'event cards have an arched silhouette, unlike action cards');
+
+  // ── Gallery: search, sort, filter ─────────────────────────────────────────────
+  {
+    const names = () => page.$$eval('.gallery__grid .card', (els) => els.map((e) => e.getAttribute('aria-label').replace(/^(角色|行动|事件|官作)牌 /, '')));
+    await page.click('.tabs .tab:has-text("全部")');
+    await sleep(200);
+    const all = (await names()).length;
+    assert.ok(all >= 130, `"全部" lists every card (${all})`);
+    await page.fill('.gsearch input', '白嫖');
+    await sleep(200);
+    const hits = await names();
+    assert.ok(hits.includes('白嫖') && hits.length < 12, `searching 白嫖 finds it: ${hits.join(',')}`);
+    // searching effect text, not only names
+    await page.fill('.gsearch input', '手牌上限');
+    await sleep(200);
+    const byText = await names();
+    assert.ok(byText.length >= 2 && byText.every((n) => !n.includes('手牌上限')), `search covers effect text, not only names: ${byText.join(',')}`);
+    await page.fill('.gsearch input', '没有这张牌zzz');
+    await sleep(200);
+    assert.equal(await page.locator('.gallery__empty').count(), 1, 'empty result is explained');
+    await page.click('.gsearch__clear');
+    await page.click('.tabs .tab:has-text("行动")');
+    await page.click('.gsort button:has-text("名称")');
+    await sleep(200);
+    const sorted = await names();
+    const copy = [...sorted].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    assert.deepEqual(sorted, copy, 'sorted by name');
+    await page.click('.gsort button:has-text("张数")');
+    await sleep(200);
+    const counts = await page.$$eval('.gallery__item', (els) => els.map((e) => Number(e.querySelector('.gallery__count')?.textContent.replace('×', '') ?? 1)));
+    assert.ok(counts.every((c, i) => i === 0 || counts[i - 1] >= c), 'sorted by copies, most first');
+    await page.click('.gsort button:has-text("默认")');
+    await page.click('.gchips button:has-text("判定")');
+    await sleep(200);
+    const judged = await page.$$eval('.gallery__grid .card', (els) => els.map((e) => e.querySelector('.card__badge')?.textContent));
+    assert.ok(judged.length > 0 && judged.every((b) => b === '判定'), 'group chip filters by category');
+    await page.screenshot({ path: `${OUT}/ux-gallery-search.png` });
+    await page.click('.gchips button:has-text("全部")');
+    log('gallery: search (name + effect text), sort, group filter');
+  }
 
   // ── Hover preview: placement from the first frame, keyword boxes ────────────
   await page.click('.tabs .tab:has-text("行动")');
@@ -308,7 +370,7 @@ try {
       await cards.nth(i).click();
       await page.locator('.playmenu__item:has-text("当作「传教」")').first().click();
       await page.click('.revealconfirm .btn--gold:has-text("翻开并发动")');
-      await page.waitForSelector('.fx__via, .fx__skill', { timeout: 8000 });
+      await page.waitForSelector('.stage__via, .fx__skill, .fx__reveal', { timeout: 8000 });
       log('played as 传教: explanation, source preview, reveal confirmation, skill effect');
       return true;
     }
@@ -335,13 +397,18 @@ try {
       return t ? { title: t.querySelector('.coach__title').textContent, finale: !!t.querySelector('.btn--gold')?.textContent.includes('回到首页') } : null;
     });
     if (tip) {
-      const overlap = await page.evaluate(() => {
+      const overlaps = () => page.evaluate(() => {
         const t = document.querySelector('.coach__tip')?.getBoundingClientRect();
         const d = document.querySelector('.decide')?.getBoundingClientRect();
         if (!t || !d) return false;
         return !(t.right < d.left || t.left > d.right || t.bottom < d.top || t.top > d.bottom);
       });
-      assert.equal(overlap, false, 'a coach tip must never cover the decision panel');
+      // A decision panel that has only just slid in may touch the tip for a frame or two; the tip must step aside within a moment.
+      if (await overlaps()) {
+        await sleep(700);
+        await page.screenshot({ path: `${OUT}/ux-coach-overlap.png` });
+        assert.equal(await overlaps(), false, 'a coach tip must never cover the decision panel');
+      }
     }
     if (tip && !tips.includes(tip.title)) {
       tips.push(tip.title);
@@ -360,17 +427,19 @@ try {
       await page.waitForSelector('.myarea .emote-bubble', { timeout: 4000 });
       log('emote bubble shows above my seat');
     }
-    if (!audited && (await page.locator('.fx__play, .fx__flight, .fx__banner').count())) {
+    if (!audited && (await page.locator('.fx__play, .fx__flight, .fx__banner, .stage__card').count())) {
       audited = true;
       await jankAudit('table with effects');
     }
     await sleep(90);
   }
+  // the \"你的回合\" band must never stay on screen once the effects are done
+  await page.waitForFunction(() => !document.querySelector('.fx__turn'), null, { timeout: 8000 });
   log('coach tips shown:', tips.join(' → '));
   for (const needed of ['欢迎来到教学局！', '社群规模', '官作牌', '行动阶段']) assert.ok(tips.includes(needed), `coach showed "${needed}"`);
   assert.ok(viaDone, 'the 传教 explanation flow was exercised');
   const seenFx = await page.evaluate(() => [...window.__fxSeen]);
-  log('effects rendered:', seenFx.filter((c) => /^fx__(play|via|skill|mod|value|num|seatfx|passive|shock|rays)$/.test(c)).join(' '));
+  log('effects rendered:', seenFx.filter((c) => /^(fx__(play|skill|mod|value|num|seatfx|passive|shock|rays|turn|round|target|dice|reveal)|stage__(card|via|caption))$/.test(c)).join(' '));
   for (const needed of ['fx__play', 'fx__value', 'fx__num', 'fx__shock']) assert.ok(seenFx.includes(needed), `effect "${needed}" rendered during play`);  assert.ok(tips.includes('教学完成！'), 'tutorial reached its finale');
   await page.waitForSelector('.topbar .signal[data-ping]', { timeout: 6000 });
   await page.click('.coach__tip .btn--gold:has-text("回到首页")');

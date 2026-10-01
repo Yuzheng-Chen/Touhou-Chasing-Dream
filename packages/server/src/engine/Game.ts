@@ -1,8 +1,8 @@
 import {
   ACTION_CARDS, BASE_INFLUENCE_CAP, COMMUNITY_LIMIT, EVENT_CARDS, JUDGE_LABEL, OFFICIAL_CARDS,
-  PACE_FACTOR, actionDef, baseHandLimit, cardDef, endThreshold, judgeResult,
-  type AnswerOf, type CardInstance, type Fx, type JudgeKind, type LogEntry, type Prompt,
-  type PromptKind, type PromptSpec, type Tone,
+  PACE_FACTOR, actionDef, baseHandLimit, cardDef, endThreshold, fxMs, judgeResult,
+  type AnswerOf, type CalcStep, type CardInstance, type Fx, type JudgeKind, type LogEntry, type Prompt,
+  type PromptKind, type PromptSpec, type SettleTo, type Tone,
 } from '@tcd/shared';
 import { botAnswer } from './bot.js';
 import { normalizeAnswer } from './answers.js';
@@ -54,6 +54,8 @@ export interface ChangeOpts {
   source?: PlayerState | null;
   cause: Cause;
   cardId?: string;
+  /** Steps that led to the requested change (printed number, modifiers); the primitive appends its own. */
+  calc?: CalcStep[];
 }
 
 interface Pending {
@@ -191,12 +193,58 @@ export class Game {
     });
   }
 
+  /** Time owed for effects that were logged synchronously (reveals, passive skills): paid by the next pause / prompt. */
+  private owed = 0;
+
   /** Linger so players can watch an effect play. Scaled by the room's pace; skipped in tests. */
   async pause(ms: number) {
-    if (this.opts.fast || ms <= 0) return;
+    const total = ms + this.owed;
+    this.owed = 0;
+    if (this.opts.fast || total <= 0) return;
     this.touch();
-    await new Promise((r) => setTimeout(r, ms * PACE_FACTOR[this.opts.pace ?? 'normal']));
+    await new Promise((r) => setTimeout(r, total * PACE_FACTOR[this.opts.pace ?? 'epic']));
     if (this.aborted) throw new AbortError();
+  }
+
+  /** Log an effect and give the table the time the effect needs. */
+  async show(text: string, fx: Fx, level: LogEntry['level'] = 'info') {
+    if (fx.type === 'play' || fx.type === 'event') this.doubled = null;
+    this.log(text, fx, level);
+    await this.pause(fxMs(fx));
+  }
+
+  /** `from` has picked `targets`: a lock-on from the card on stage to each of them. */
+  async target(from: PlayerState, targets: PlayerState[], cardId?: string) {
+    await this.show(
+      `{p:${from.id}} 指定了 ${targets.map((t) => `{p:${t.id}}`).join('、')}`,
+      { type: 'target', fromId: from.id, toIds: targets.map((t) => t.id), cardId },
+      'minor',
+    );
+  }
+
+  /** Log an effect without waiting for it: the wait is added to the next pause (or prompt). */
+  showLater(text: string, fx: Fx, level: LogEntry['level'] = 'info') {
+    this.log(text, fx, level);
+    if (!this.opts.fast) this.owed += fxMs(fx);
+  }
+
+  /**
+   * A card on the table's centre stage: logs `play`, lets it land, runs its effect and then sends it to `to`.
+   * The stage keeps the card in the middle for as long as its effect is being decided (targets, choices, reactions).
+   */
+  async stage(
+    p: PlayerState, text: string, fx: Extract<Fx, { type: 'play' }>, body: () => Promise<void>,
+    end: { to?: () => SettleTo; toId?: () => string | undefined; finish?: () => void } = {},
+  ) {
+    await this.show(text, fx, 'major');
+    try {
+      await body();
+    } finally {
+      if (!this.aborted) {
+        await this.show('', { type: 'settle', playerId: p.id, cardId: fx.cardId, to: end.to?.() ?? 'discard', toId: end.toId?.() }, 'minor');
+        end.finish?.();
+      }
+    }
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -224,6 +272,8 @@ export class Game {
     opts: { secret?: boolean } = {},
   ): Promise<AnswerOf<K>> {
     if (this.aborted) return Promise.reject(new AbortError());
+    // Let effects that were logged without waiting (a reveal, a passive skill) finish before asking anything.
+    if (this.owed > 0 && !this.opts.fast) return this.pause(0).then(() => this.ask(who, spec, opts));
     const id = `q${++this.promptSeq}`;
     const botPlays = who.isBot || who.auto;
     const timeout = botPlays ? 0 : this.opts.promptTimeout;
@@ -420,9 +470,14 @@ export class Game {
     return false;
   }
 
+  /** Last number 东方辉针城 doubled, so the change it ends up in can show "×2" in its calculation. */
+  private doubled: { printed: number; value: number } | null = null;
+
   /** 东方辉针城: printed numbers on cards are doubled. */
   n(x: number, subject?: PlayerState | null) {
-    return this.officialActive('ddc', subject) ? x * 2 : x;
+    if (!this.officialActive('ddc', subject)) return x;
+    this.doubled = { printed: x, value: x * 2 };
+    return x * 2;
   }
 
   canJudge(subject?: PlayerState | null) {
@@ -562,7 +617,11 @@ export class Game {
     if (!cards.length) return;
     const removed = await this.loseCards(p, cards);
     this.toDiscard(removed);
-    this.log(`{p:${p.id}} 弃置了 ${removed.map((c) => `{c:${c.defId}}`).join('')}${why ? `（${why}）` : ''}`, undefined, 'minor');
+    await this.show(
+      `{p:${p.id}} 弃置了 ${removed.map((c) => `{c:${c.defId}}`).join('')}${why ? `（${why}）` : ''}`,
+      { type: 'discard', playerId: p.id, cardIds: removed.map((c) => c.defId) },
+      'minor',
+    );
   }
 
   /**
@@ -598,30 +657,59 @@ export class Game {
   // ══════════════════════════════════════════════════════════════
 
   /** Change 个人影响力. Returns the change that actually happened. */
+  /** An effect that stopped a change (自闭, 备受瞩目, 遗世独立 …): shown as a shield over the player. */
+  private async blocked(t: PlayerState, label: string, text: string, sourceId?: string) {
+    await this.show(`{p:${t.id}} ${text}（${label}）`, { type: 'block', playerId: t.id, label, text, sourceId }, 'minor');
+  }
+
+  /**
+   * The calculation behind a change: what the card printed, what modified it on the way and what finally happened.
+   * `requested` is the number handed to the primitive; steps passed in `o.calc` came before it.
+   */
+  private startCalc(requested: number, o: ChangeOpts): CalcStep[] {
+    const d = this.doubled;
+    this.doubled = null;
+    if (o.calc?.length) return [...o.calc];
+    const skillOf = o.cause === 'skill' && o.source ? o.source.role : undefined;
+    const label = o.cardId ? this.cardName(o.cardId) : skillOf ? `${this.cardName(skillOf)}·技能` : o.cause === 'official' ? '官作效果' : '规则';
+    const steps: CalcStep[] = [{ label, text: '数值', value: requested, sourceId: o.cardId ?? skillOf }];
+    if (d && d.value === Math.abs(requested)) {
+      const sign = Math.sign(requested);
+      steps[0] = { label, text: '印刷数值', value: sign * d.printed, sourceId: o.cardId };
+      steps.push({ label: '东方辉针城', text: '数字翻倍', value: requested, sourceId: 'ddc' });
+    }
+    return steps;
+  }
+
+  /** Change 个人影响力. Returns the change that actually happened. */
   async changeInfluence(t: PlayerState, delta: number, o: ChangeOpts): Promise<number> {
     if (delta === 0) return 0;
     if (!this.affects(t, o.cause, o.source)) {
-      this.log(`{p:${t.id}} 不受影响（自闭）`, undefined, 'minor');
+      await this.blocked(t, '自闭', '不受影响', 'withdrawn');
       return 0;
     }
     if (this.hasStatus(t, 'spotlightUp') || this.hasStatus(t, 'spotlightDown')) {
-      this.log(`{p:${t.id}} 的个人影响力被「备受瞩目」锁定`, undefined, 'minor');
+      await this.blocked(t, '备受瞩目', '个人影响力被锁定', 'spotlight');
       return 0;
     }
     if (delta < 0 && o.source && o.source !== t && (await Roles.hermitNegate(this, t, o.source, '个人影响力扣减'))) return 0;
 
     const cap = this.influenceCap(t);
     const from = t.influence;
+    const calc = this.startCalc(delta, o);
     let to = clamp(from + delta, -cap, cap);
-    if (to < 0 && from >= 0 && this.officialActive('td', t)) to = 0; // 东方神灵庙
+    if (to !== from + delta) calc.push({ label: '上限', text: `个人影响力限制在 ±${cap}`, value: to - from });
+    if (to < 0 && from >= 0 && this.officialActive('td', t)) {
+      to = 0; // 东方神灵庙
+      calc.push({ label: '东方神灵庙', text: '不会降到 0 以下', value: to - from, sourceId: 'td' });
+    }
     const actual = to - from;
     if (actual === 0) return 0;
     t.influence = to;
-    this.log(
+    await this.show(
       `{p:${t.id}} 个人影响力 {n:${actual > 0 ? '+' : ''}${actual}} → ${to}`,
-      { type: 'influence', playerId: t.id, from, to, cardId: o.cardId, by: o.source?.id },
+      { type: 'influence', playerId: t.id, from, to, cardId: o.cardId, by: o.source?.id, calc },
     );
-    await this.pause(380 + 120 * Math.min(5, Math.abs(actual)));
     if (actual > 0 && this.s.turn) this.s.turn.influenceGain[t.id] = (this.s.turn.influenceGain[t.id] ?? 0) + actual;
     await Roles.afterInfluenceChange(this, t, actual, o);
     return actual;
@@ -631,27 +719,37 @@ export class Game {
   async changeCommunity(delta: number, o: ChangeOpts): Promise<number> {
     if (delta === 0) return 0;
     let d = delta;
+    const calc = this.startCalc(delta, o);
     // 悲观预言家·东方乙烷②
-    if (d < 0 && this.s.players.some((p) => this.revealed(p, 'doomsayer') && p.influence > 4)) d -= 1;
-    if (d < 0) d = await Roles.organizerNpc(this, d);
+    if (d < 0 && this.s.players.some((p) => this.revealed(p, 'doomsayer') && p.influence > 4)) {
+      d -= 1;
+      calc.push({ label: '东方乙烷', text: '减少量 +1', value: d, sourceId: 'doomsayer' });
+    }
+    if (d < 0) {
+      const before = d;
+      d = await Roles.organizerNpc(this, d);
+      if (d !== before) calc.push({ label: 'NPC', text: `减少量 ${-before} → ${-d}`, value: d, sourceId: 'organizer' });
+    }
     if (d > 1 && (await Roles.elitistStratify(this, d))) return 0;
     const from = this.s.community;
     const to = clamp(from + d, -COMMUNITY_LIMIT, COMMUNITY_LIMIT);
+    if (to !== from + d) calc.push({ label: '上限', text: `社群规模限制在 ±${COMMUNITY_LIMIT}`, value: to - from });
     const actual = to - from;
     if (actual === 0) return 0;
     this.s.community = to;
-    this.log(`社群规模 {n:${actual > 0 ? '+' : ''}${actual}} → ${to}`, { type: 'community', from, to, cardId: o.cardId, by: o.source?.id });
-    await this.pause(560 + 140 * Math.min(6, Math.abs(actual)));
+    await this.show(`社群规模 {n:${actual > 0 ? '+' : ''}${actual}} → ${to}`, { type: 'community', from, to, cardId: o.cardId, by: o.source?.id, calc });
     if (actual < 0 && this.s.turn) this.s.turn.communityDecreased = true;
     await Roles.afterCommunityChange(this, actual);
     return actual;
   }
 
   /** Set 社群规模 directly (文化自信, 居高临下). Does not trigger increase/decrease hooks. */
-  setCommunity(v: number) {
+  setCommunity(v: number, by?: { cardId: string; player: PlayerState }) {
     const from = this.s.community;
     this.s.community = v;
-    this.log(`社群规模成为 ${v}`, { type: 'community', from, to: v }, 'major');
+    if (from === v) return;
+    const calc: CalcStep[] = [{ label: by ? this.cardName(by.cardId) : '规则', text: `社群规模直接成为 ${v}`, value: v - from, sourceId: by?.cardId }];
+    this.showLater(`社群规模成为 ${v}`, { type: 'community', from, to: v, cardId: by?.cardId, by: by?.player.id, calc }, 'major');
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -674,8 +772,7 @@ export class Game {
     const face = this.rng.die();
     const result = judgeResult(kind, face);
     const shown = typeof result === 'boolean' ? (result ? '真' : '假') : result > 0 && kind === 'delta' ? `+${result}` : `${result}`;
-    this.log(`{p:${p.id}} 进行${JUDGE_LABEL[kind]}：🎲${face} → ${shown}`, { type: 'dice', playerId: p.id, face, judge: kind, result });
-    await this.pause(1100);
+    await this.show(`{p:${p.id}} 进行${JUDGE_LABEL[kind]}：🎲${face} → ${shown}`, { type: 'dice', playerId: p.id, face, judge: kind, result });
     if (face <= 3 && this.revealed(p, 'original_player')) {
       this.log(`{p:${p.id}} 「游戏直播」`, undefined, 'minor');
       await this.changeInfluence(p, 1, { cause: 'skill', source: p });
@@ -697,24 +794,29 @@ export class Game {
     if (skill) this.skillFx(p, why!, false, first);
     if (!first) return;
     p.roleRevealed = true;
-    this.log(`{p:${p.id}} 翻开了角色牌 {c:${p.role}}${why ? `（${why}）` : ''}`, skill ? undefined : { type: 'reveal', playerId: p.id, roleId: p.role }, 'major');
+    const text = `{p:${p.id}} 翻开了角色牌 {c:${p.role}}${why ? `（${why}）` : ''}`;
+    // A reveal through a skill is staged as the skill (with the role card and its text); otherwise as a plain reveal.
+    if (skill) this.log(text, undefined, 'major');
+    else this.showLater(text, { type: 'reveal', playerId: p.id, roleId: p.role }, 'major');
   }
 
-  /** Log + effect for a role skill going off (no pause: for reactive skills inside other effects). */
+  /** Log + effect for a role skill going off (no pause: the wait is paid by the next pause or prompt). */
   skillFx(p: PlayerState, name: string, passive = false, reveals = false) {
-    this.log(`{p:${p.id}} ${passive ? '' : '发动'}「${name}」${passive ? '（被动）' : ''}`, { type: 'skill', playerId: p.id, roleId: p.role, skill: name, passive, reveals }, passive ? 'minor' : 'major');
+    this.showLater(`{p:${p.id}} ${passive ? '' : '发动'}「${name}」${passive ? '（被动）' : ''}`, { type: 'skill', playerId: p.id, roleId: p.role, skill: name, passive, reveals }, passive ? 'minor' : 'major');
   }
 
   /** A skill going off with time to watch it. */
   async skill(p: PlayerState, name: string, passive = false) {
     this.skillFx(p, name, passive, !passive && !p.roleRevealed);
-    await this.pause(passive ? 700 : 1150);
+    await this.pause(0);
   }
 
   /** A rule modifier changing a printed number (煽风点火 +1, 东方辉针城 ×2 …). */
-  async mod(label: string, amount: string, sourceId?: string, playerId?: string) {
-    this.log(`${sourceId ? `{c:${sourceId}}` : label} ${amount}`, { type: 'mod', label, amount, sourceId, playerId }, 'minor');
-    await this.pause(820);
+  async mod(label: string, amount: string, sourceId?: string, playerId?: string, silent = false) {
+    const text = `${sourceId ? `{c:${sourceId}}` : label} ${amount}`;
+    // Modifiers of a number are told by that number's calculation tape; only modifiers that stop a change get their own moment.
+    if (silent) this.log(text, undefined, 'minor');
+    else await this.show(text, { type: 'mod', label, amount, sourceId, playerId }, 'minor');
   }
 
   /** Once-per-turn style counters. */

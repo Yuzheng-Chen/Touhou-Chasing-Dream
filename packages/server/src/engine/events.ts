@@ -1,4 +1,4 @@
-import { eventDef, type CardInstance, type EventDirection } from '@tcd/shared';
+import { eventDef, type CalcStep, type CardInstance, type EventDirection } from '@tcd/shared';
 import { adjustMagnitude, type Game } from './Game.js';
 import { revealOfficial } from './officials.js';
 import * as Roles from './roles.js';
@@ -37,9 +37,17 @@ export class EventCtx {
    * Apply one event modifier to a number and announce it, so players see *why* the number differs from the card.
    * `delta` is the change in magnitude it caused (0 = it had no effect and stays silent).
    */
-  private async announce(before: number, after: number, sourceId: string, text: string) {
-    if (before !== after && before !== 0) await this.g.mod(this.g.cardName(sourceId), text, sourceId, this.owner.id);
+  private async announce(before: number, after: number, sourceId: string, text: string, calc: CalcStep[]) {
+    if (before !== after && before !== 0) {
+      await this.g.mod(this.g.cardName(sourceId), text, sourceId, this.owner.id, true);
+      calc.push({ label: this.g.cardName(sourceId), text, value: after, sourceId });
+    }
     return after;
+  }
+
+  /** The printed number of this event (or a computed X) as the first step of a calculation. */
+  private base(v: number, raw: boolean): CalcStep[] {
+    return [{ label: this.g.cardName(this.cardId), text: raw ? '计算所得' : '印刷数值', value: v, sourceId: this.cardId }];
   }
 
   /** Change community by a printed amount (`raw` = computed X, not doubled by 辉针城). */
@@ -49,28 +57,37 @@ export class EventCtx {
       await g.mod('事先科普', '防止了社群规模变化', 'preempt', this.owner.id);
       return 0;
     }
+    const calc = this.base(printed, raw);
     let v = raw ? printed : this.n(printed);
-    if (!raw && v !== printed) await g.mod('东方辉针城', `数字翻倍 ${printed > 0 ? '+' : ''}${printed} → ${v > 0 ? '+' : ''}${v}`, 'ddc', this.owner.id);
-    if (this.mods.fan) v = await this.announce(v, adjustMagnitude(v, 1), 'fan_flames', '偏移量 +1');
-    if (g.officialActive('hm', this.owner)) v = await this.announce(v, adjustMagnitude(v, -1), 'hm', '社群规模偏移量 −1');
-    if (g.officialActive('vd', this.owner)) v = await this.announce(v, adjustMagnitude(v, 1), 'vd', '社群规模偏移量 +1');
+    if (!raw && v !== printed) {
+      await g.mod('东方辉针城', `数字翻倍 ${printed > 0 ? '+' : ''}${printed} → ${v > 0 ? '+' : ''}${v}`, 'ddc', this.owner.id, true);
+      calc.push({ label: '东方辉针城', text: '数字翻倍', value: v, sourceId: 'ddc' });
+    }
+    if (this.mods.fan) v = await this.announce(v, adjustMagnitude(v, 1), 'fan_flames', '偏移量 +1', calc);
+    if (g.officialActive('hm', this.owner)) v = await this.announce(v, adjustMagnitude(v, -1), 'hm', '社群规模偏移量 −1', calc);
+    if (g.officialActive('vd', this.owner)) v = await this.announce(v, adjustMagnitude(v, 1), 'vd', '社群规模偏移量 +1', calc);
     if (v > 0) {
       for (const c of g.players) {
         if (g.revealed(c, 'cosplayer') && g.s.community < c.influence) {
           v += 1; // 游场②
-          await g.mod('游场', '偏移量 +1', 'cosplayer', c.id);
+          await g.mod('游场', '偏移量 +1', 'cosplayer', c.id, true);
+          calc.push({ label: '游场', text: '偏移量 +1', value: v, sourceId: 'cosplayer' });
         }
       }
     }
-    return g.changeCommunity(v, this.src);
+    return g.changeCommunity(v, { ...this.src, calc });
   }
 
   async inf(p: PlayerState, printed: number, raw = false) {
     if (!this.g.affects(p, 'event', this.owner)) return 0;
+    const calc = this.base(printed, raw);
     let v = raw ? printed : this.n(printed);
-    if (!raw && v !== printed) await this.g.mod('东方辉针城', `数字翻倍 ${printed > 0 ? '+' : ''}${printed} → ${v > 0 ? '+' : ''}${v}`, 'ddc', this.owner.id);
-    if (this.mods.fan) v = await this.announce(v, adjustMagnitude(v, 1), 'fan_flames', '偏移量 +1');
-    return this.g.changeInfluence(p, v, this.src);
+    if (!raw && v !== printed) {
+      await this.g.mod('东方辉针城', `数字翻倍 ${printed > 0 ? '+' : ''}${printed} → ${v > 0 ? '+' : ''}${v}`, 'ddc', this.owner.id, true);
+      calc.push({ label: '东方辉针城', text: '数字翻倍', value: v, sourceId: 'ddc' });
+    }
+    if (this.mods.fan) v = await this.announce(v, adjustMagnitude(v, 1), 'fan_flames', '偏移量 +1', calc);
+    return this.g.changeInfluence(p, v, { ...this.src, calc });
   }
   async draw(p: PlayerState, k: number) {
     if (this.g.affects(p, 'event', this.owner)) await this.g.draw(p, k, this.owner);
@@ -372,6 +389,7 @@ export const EVENTS: Record<string, EventHandler> = {
       const cands = ev.all().filter((p) => g.targetable(p));
       if (cands.length) {
         const t = await g.choosePlayer(owner, '扫黄打非：指定一名玩家（个人影响力-5并跳过其下个回合）', cands, { cardId: ev.cardId });
+        await g.target(owner, [t], ev.cardId);
         await ev.inf(t, -5);
         ev.keep = true;
         g.addStatus(t, 'crackdown', ev.card, '扫黄打非：跳过下个回合');
@@ -401,7 +419,7 @@ export const EVENTS: Record<string, EventHandler> = {
       if (ev.g.turn?.playerId === ev.owner.id) ev.g.turn.ended = true;
     },
   },
-  cultural_confidence: { up: async (ev) => { ev.g.setCommunity(0); } },
+  cultural_confidence: { up: async (ev) => { ev.g.setCommunity(0, { cardId: ev.cardId, player: ev.owner }); } },
   translation: {
     up: async (ev) => {
       const { g, owner } = ev;
@@ -492,26 +510,34 @@ export async function resolveEvent(g: Game, owner: PlayerState, card: CardInstan
     preempt: delays.some((x) => x.effect === 'preempt'),
     fan: delays.some((x) => x.effect === 'fan_flames'),
   };
-  g.log(`{p:${owner.id}} 的事件 {c:${card.defId}} ${DIR_LABEL[dir]}发生`, { type: 'event', playerId: owner.id, cardId: card.defId, direction: dir }, 'major');
-  if (delays.length) g.log(`延时牌生效：${delays.map((x) => `{c:${x.effect}}`).join('')}`);
-  await g.pause(1300);
-
   const ev = new EventCtx(g, owner, card, dir, mods);
   const h = EVENTS[card.defId];
   if (!h) throw new Error(`No handler for event ${card.defId}`);
-  if (card.defId === 'blooming' && dir === 'down') g.log('遍地开花（逆向）直接进入弃牌堆，无任何效果', undefined, 'minor');
-  await (dir === 'down' && h.down ? h.down : h.up)(ev);
-
-  for (const d of delays) {
-    // 人类的本质 never enters the discard pile: it is handed to the owner's next player instead.
-    if (d.card.defId === 'human_nature') g.next(g.player(d.ownerId)).pendingGift.push(d.card);
-    else g.toDiscard([d.card]);
-  }
-  if (!ev.keep && !ev.chained) {
-    g.s.eventDiscard.push(card);
-    g.s.lastEvent = { defId: card.defId, direction: dir };
-  }
-  g.touch();
+  await g.stage(
+    owner,
+    `{p:${owner.id}} 的事件 {c:${card.defId}} ${DIR_LABEL[dir]}发生`,
+    { type: 'play', playerId: owner.id, cardId: card.defId, direction: dir },
+    async () => {
+      if (delays.length) g.log(`延时牌生效：${delays.map((x) => `{c:${x.effect}}`).join('')}`);
+      if (card.defId === 'blooming' && dir === 'down') g.log('遍地开花（逆向）直接进入弃牌堆，无任何效果', undefined, 'minor');
+      await (dir === 'down' && h.down ? h.down : h.up)(ev);
+    },
+    {
+      to: () => (ev.keep ? 'keep' : ev.chained ? 'chain' : 'discard'),
+      finish: () => {
+        for (const d of delays) {
+          // 人类的本质 never enters the discard pile: it is handed to the owner's next player instead.
+          if (d.card.defId === 'human_nature') g.next(g.player(d.ownerId)).pendingGift.push(d.card);
+          else g.toDiscard([d.card]);
+        }
+        if (!ev.keep && !ev.chained) {
+          g.s.eventDiscard.push(card);
+          g.s.lastEvent = { defId: card.defId, direction: dir };
+        }
+        g.touch();
+      },
+    },
+  );
   await Roles.afterEvent(g, d.topic);
 }
 
@@ -542,9 +568,13 @@ async function murphyWindow(g: Game, owner: PlayerState, card: CardInstance, dir
     });
     if (!use) continue;
     await g.loseCards(p, [m]);
-    g.toDiscard([m]);
-    g.log(`{p:${p.id}} 打出 {c:murphy}：事件方向逆转为${DIR_LABEL[flip]}`, { type: 'play', playerId: p.id, cardId: 'murphy' }, 'major');
-    await g.changeInfluence(p, -g.n(1, p), { source: p, cause: 'action', cardId: 'murphy' });
+    await g.stage(
+      p,
+      `{p:${p.id}} 打出 {c:murphy}：事件方向逆转为${DIR_LABEL[flip]}`,
+      { type: 'play', playerId: p.id, cardId: 'murphy' },
+      async () => { await g.changeInfluence(p, -g.n(1, p), { source: p, cause: 'action', cardId: 'murphy' }); },
+      { finish: () => g.toDiscard([m]) },
+    );
     return flip; // 墨菲定律 cannot respond to 墨菲定律
   }
   return dir;

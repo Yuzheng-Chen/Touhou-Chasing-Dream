@@ -51,9 +51,9 @@
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
   --glow-gold: 0 0 0 1px rgba(243, 213, 138, 0.6), 0 0 22px rgba(243, 213, 138, 0.35);
 
-  --font-body: 'Noto Sans SC', system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-serif: 'Noto Serif SC', 'Songti SC', serif;
-  --font-brush: 'Ma Shan Zheng', 'Noto Serif SC', serif;
+  --font-body: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', 'Hiragino Sans GB', sans-serif;
+  --font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --font-brush: 'Ma Shan Zheng', 'Noto Serif SC', 'STKaiti', 'KaiTi', serif;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: dark;
@@ -260,20 +260,7 @@ button {
   clip: rect(0 0 0 0);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Hidden seats of the /local console (and background tabs) shouldn't burn GPU. */
+/* Hidden seats of the /local console (and background tabs) shouldn't burn GPU.
+   NOTE: never shorten animation durations globally (e.g. for prefers-reduced-motion): an infinite animation squeezed
+   to 0.01 ms loops thousands of times a second, which shows up as the whole page twitching. */
 html.paused *, html.paused *::before, html.paused *::after { animation-play-state: paused !important; }
-
-.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
-}

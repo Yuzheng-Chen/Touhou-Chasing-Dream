@@ -1,5 +1,5 @@
 import {
-  ACTION_CATEGORY_LABEL, EVENT_TOPIC_COLOR, FOCUS_LABEL, STANCE_LABEL, cardArtUrl, cardDef, highlightPattern,
+  ACTION_CATEGORY_LABEL, EVENT_TOPIC_COLOR, FOCUS_LABEL, STANCE_LABEL, cardArtUrl, cardDef, cardThumbUrl, highlightPattern,
   type CardDef, type CardKind,
 } from '@tcd/shared';
 import { Fragment, useEffect, useRef, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
@@ -115,7 +115,7 @@ export function Card({ id, size = 'md', text, selected, playable, dim, onClick, 
       data-card={id}
       data-kind={d.kind}
     >
-      <div className="card__art" style={{ backgroundImage: `url(${cardArtUrl(id)})` }} />
+      <div className="card__art" style={{ backgroundImage: size === 'lg' || size === 'xl' ? `url(${cardArtUrl(id)}), url(${cardThumbUrl(id)})` : `url(${cardThumbUrl(id)})` }} />
       <div className="card__tint" />
       <div className="card__frame" />
 
