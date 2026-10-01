@@ -116,6 +116,8 @@ deploy/            docker-compose + Caddy (auto-HTTPS), systemd unit alternative
 | Rooms | `test/rooms.test.ts` | real sockets: room codes, capacity 8, host-only actions, kick, host transfer, reconnect by token, spectators, chat flood |
 | Browser e2e | `e2e/run.mjs` | N independent browser contexts play full games through the UI: lobby → role pick → game → scoring → rematch → 2nd game; spectator; reload, real network loss, 25 s absence → 托管 → return; privacy invariant on every frame; 0 console errors |
 | Tabs e2e | `e2e/tabs.mjs` | `?as=` gives tabs of ONE browser profile separate identities; reload keeps the seat |
+| Effects | `test/effects.test.ts` | fx carry who/what caused each change; modifiers/skills/targets announced; move `why`/`reveals`; prompt `reveals`; abort vote over sockets; pace validation |
+| Vote e2e | `e2e/vote.mjs` | two browser players: refusal keeps the game, cooldown, unanimous vote returns both to the room, a new game starts |
 | UX e2e | `e2e/ux.mjs` | real mouse: no layout/paint-property animations and no backdrop blur (jank); hover preview sits beside the pointer from its FIRST frame, clears when the gallery closes; glossary boxes present/absent as expected; the four card kinds are visually distinct; custom rounds; latency indicator; emote bubble; the whole coached tutorial (tips never cover the decision panel) |
 | Monkey e2e | `e2e/monkey.mjs` | 3–8 independent players finish a game while a per-seat monkey hovers, clicks, presses keys and resizes at random: no page errors, no "undefined/NaN" text, no lingering preview |
 | Console e2e | `e2e/local.mjs` | `/local` with 4–8 seats in one window plays a game; seats are isolated |
@@ -143,6 +145,19 @@ decision UI exposes `data-prompt-id`, `data-kind`, `data-min`, `data-max` for it
   `document.getAnimations()` and computed styles. Real GPU smoothness can only be judged on real hardware (headless uses software rendering).
 * **Latency**: the client times a `net:ping` ack every 3 s, smooths it and reports `net:rtt`; the server exposes `RoomMember.ping` / `PlayerView.ping`
   (re-broadcast only on a ≥ 25 ms change). **Emotes**: whitelist `EMOTES` in rooms.ts and `ui/emotes.ts` on the client; 1 per 1.2 s.
+* **Effects pipeline** (what makes the table feel alive): the engine logs entries with an `Fx`: `play` (with `via` = where an unusual play comes from:
+  a role skill, 东方非想天则, 人类的本质, 东方鬼形兽), `target`, `skill` (active/passive, via `g.skillFx` / `g.skill`, and automatically from
+  `g.reveal(p, skillName)`), `mod` (煽风点火 +1, 辉针城 ×2, 心绮楼/噩梦日记/游场 — announced by `EventCtx`), `community` / `influence` (carry `cardId` + `by`).
+  `store.ingestGame` queues them; `game/Fx.tsx` plays them one after another: card slam with rays/aura/shockwave, a "via" plate, skill banner, modifier chip that flies
+  into the meter, and number slams scaled by size (|Δ| 1–2 / 3–4 / ≥5 → tier 1/2/3: bigger digits, more rings, vignette, shake, "社群沸腾!"). The server lingers
+  after each (`Game.pause`, scaled by the room's `pace` quick/normal/epic) so animations and game state stay roughly in step; tests run `fast` (no pauses).
+  Seat highlighting for targets comes from `target` fx. Sounds fire at playback (`Fx.tsx`), not at ingest.
+* **Explaining moves** (`TurnMove.why`, `.reveals`): `flow.listMoves` / `roles.skillMoves` attach a title/text/source card to every non-obvious option
+  (role skills granting 当作X, officials, copies). The play menu shows it and hovering previews the source card. Moves with `reveals` (an active skill
+  while face-down) open `RevealConfirm`; prompts about your own hidden role carry `Prompt.reveals` (set in `Game.ask` when `cardId === who.role`) and show a warning.
+* **Abort vote** (`vote:start` / `vote:cast` / `vote:state`, `Room.startVote`): any seated human may propose "中止本局并回到房间"; every *online, non-托管* human must agree
+  (proposer counts yes; offline/托管 players don't block); a refusal or the 30 s timeout cancels it (45 s cooldown per proposer). Tutorial rooms just leave.
+  UI: `game/Vote.tsx`; test: `e2e/vote.mjs` + `test/effects.test.ts`.
 * **Card effects**: `game/Burst.tsx` maps each action card to a CSS particle preset (rings, coins, flash, siren, smoke, flames, clash, swap, shield, mirror,
   bubbles, paper, sparkle). Draw/transfer log entries become card flights; community swings ≥ 4 shake the board; winners get confetti. "Reduce motion"
   (Settings, or the OS setting) disables all of it.

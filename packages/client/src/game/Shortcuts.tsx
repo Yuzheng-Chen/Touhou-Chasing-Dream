@@ -24,8 +24,8 @@ export function Shortcuts() {
         const card = hand[Number(e.key) - 1];
         if (!card) return;
         const moves = ui.movesFor(card.uid);
-        if (moves.length === 1) ui.send({ type: 'move', index: moves[0].index });
-        else if (moves.length > 1) ui.setMenuUid(card.uid);
+        if (moves.length === 1 && !moves[0].move.why && !moves[0].move.reveals) ui.requestMove(moves[0].index, moves[0].move);
+        else if (moves.length) ui.setMenuUid(card.uid);
       }
     };
     window.addEventListener('keydown', onKey);

@@ -43,7 +43,7 @@ export async function afterGain(g: Game, p: PlayerState, cards: CardInstance[], 
   if (p.role === 'anti_profit' && !g.isTurnOf(p) && live(g)) {
     for (const c of cards) {
       if (g.revealed(p, 'anti_profit')) {
-        g.log(`{p:${p.id}} 「律人律己」`, undefined, 'minor');
+        g.skillFx(p, '律人律己', true);
         await g.changeInfluence(p, -1, { cause: 'skill', source: p });
       }
       if (!p.hand.includes(c)) continue;
@@ -61,11 +61,11 @@ export async function afterGain(g: Game, p: PlayerState, cards: CardInstance[], 
 export async function afterLose(g: Game, p: PlayerState, cards: CardInstance[]) {
   if (g.isTurnOf(p) || !live(g)) return;
   if (g.revealed(p, 'socialite')) {
-    g.log(`{p:${p.id}} 「人脉」`, undefined, 'minor');
+    g.skillFx(p, '人脉', true);
     await g.draw(p, cards.length);
   }
   if (g.revealed(p, 'anti_profit')) {
-    g.log(`{p:${p.id}} 「律人律己」`, undefined, 'minor');
+    g.skillFx(p, '律人律己', true);
     await g.changeInfluence(p, cards.length, { cause: 'skill', source: p });
   }
 }
@@ -108,7 +108,7 @@ export async function afterInfluenceChange(g: Game, t: PlayerState, actual: numb
   }
   // 社团主催·社团运营
   if (actual > 0 && g.revealed(t, 'circle_host') && (o.cardId === 'create' || o.cardId === 'commission')) {
-    g.log(`{p:${t.id}} 「社团运营」`, undefined, 'minor');
+    g.skillFx(t, '社团运营', true);
     await g.draw(t, 1);
   }
 }
@@ -116,15 +116,15 @@ export async function afterInfluenceChange(g: Game, t: PlayerState, actual: numb
 export async function afterCommunityChange(g: Game, actual: number) {
   for (const p of g.orderFrom(g.current ?? g.players[0])) {
     if (actual > 2 && g.revealed(p, 'socialite')) {
-      g.log(`{p:${p.id}} 「扩列」`, undefined, 'minor');
+      g.skillFx(p, '扩列', true);
       await g.draw(p, 1);
     }
     if (actual > 2 && g.revealed(p, 'cosplayer')) {
-      g.log(`{p:${p.id}} 「游场」`, undefined, 'minor');
+      g.skillFx(p, '游场', true);
       await g.changeInfluence(p, 1, { cause: 'skill', source: p });
     }
     if (actual < -2 && g.revealed(p, 'doomsayer')) {
-      g.log(`{p:${p.id}} 「东方乙烷」`, undefined, 'minor');
+      g.skillFx(p, '东方乙烷', true);
       await g.changeInfluence(p, 1, { cause: 'skill', source: p });
     }
   }
@@ -200,7 +200,7 @@ export async function afterEvent(g: Game, topic: EventTopic) {
   if (topic === '活动') {
     for (const p of holders(g, 'organizer')) {
       if (!g.revealed(p, 'organizer')) continue;
-      g.log(`{p:${p.id}} 「开办」`, undefined, 'minor');
+      g.skillFx(p, '开办', true);
       await g.draw(p, 1);
     }
   }
@@ -271,7 +271,7 @@ export async function onTurnStart(g: Game, p: PlayerState) {
   }
   // 单推厨·专一
   if (g.revealed(p, 'oshi') && p.oshi.length > 2) {
-    g.log(`{p:${p.id}} 「专一」`, undefined, 'minor');
+    g.skillFx(p, '专一', true);
     await g.changeInfluence(p, 1, { cause: 'skill', source: p });
   }
 }
@@ -328,7 +328,7 @@ export async function beforeActionPhase(g: Game, p: PlayerState): Promise<boolea
 
 export async function afterDiscardPhase(g: Game, p: PlayerState) {
   if (g.revealed(p, 'hermit') && p.hand.length) {
-    g.log(`{p:${p.id}} 「千人千乡」`, undefined, 'minor');
+    g.skillFx(p, '千人千乡', true);
     await g.changeCommunity(-p.hand.length, { cause: 'skill', source: p });
   }
   if (p.role === 'niche_lover' && p.influence < 0 && live(g)) {
@@ -373,7 +373,7 @@ export async function onTurnEnd(g: Game, p: PlayerState) {
   for (const z of g.players) {
     if (!g.revealed(z, 'zealot') || !z.idolId) continue;
     if ((t.influenceGain[z.idolId] ?? 0) > 2) {
-      g.log(`{p:${z.id}} 「受益」`, undefined, 'minor');
+      g.skillFx(z, '受益', true);
       await g.changeInfluence(z, 1, { cause: 'skill', source: z });
     }
   }
@@ -416,7 +416,15 @@ const lastRound = (g: Game) => g.s.officialDiscard.length + 1 >= g.endTarget;
 export function skillMoves(g: Game, p: PlayerState): TurnMove[] {
   if (!live(g)) return [];
   const m: TurnMove[] = [];
-  const add = (skill: string, label: string, ok: boolean) => ok && m.push({ skill, label });
+  const add = (skill: string, label: string, ok: boolean) => {
+    if (!ok) return;
+    const text = roleDef(p.role).active.find((s) => s.name === label)?.text ?? roleDef(p.role).active[0]?.text ?? '';
+    m.push({
+      skill, label,
+      why: { title: `角色技能「${label}」`, text: `${roleDef(p.role).name}：${text}`, sourceId: p.role },
+      reveals: !p.roleRevealed, // active skills turn the role card face-up
+    });
+  };
   const r = p.role;
   const face = !p.roleRevealed;
   add('reveal2', r === 'popular_creator' ? '新刊预告' : r === 'socialite' ? '社交教育' : '发布正片',

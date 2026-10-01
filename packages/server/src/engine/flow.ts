@@ -1,6 +1,6 @@
 import {
-  ROLE_CARDS, STARTING_HAND, actionDef, eventDef, roleDef,
-  type CardInstance, type TurnMove,
+  ROLE_CARDS, STARTING_HAND, actionDef, eventDef, officialDef, roleDef,
+  type CardInstance, type FxVia, type TurnMove,
 } from '@tcd/shared';
 import { ACTIONS } from './actions.js';
 import { decideDirection, resolveEvent } from './events.js';
@@ -411,12 +411,27 @@ export function listMoves(g: Game, p: PlayerState): TurnMove[] {
     let eff = c.defId === 'human_nature' ? copy : c.defId;
     if (third) eff = copy;
     if (eff && canPlayAs(g, p, eff)) {
-      moves.push({ uid: c.uid, as: eff, label: eff === c.defId ? `打出「${name(c.defId)}」` : `打出「${name(c.defId)}」（视作「${name(eff)}」）` });
+      // Why does this card count as another one? (shown when hovering the option)
+      const why = c.defId === 'human_nature'
+        ? { title: '人类的本质', text: `这张牌视作上一张进入弃牌堆的行动牌「${name(eff)}」的复制。结算后它不会进入弃牌堆，而是交给你的下一位玩家。`, sourceId: 'human_nature' }
+        : third && eff !== c.defId
+          ? { title: '东方鬼形兽', text: `官作「东方鬼形兽」：你回合内打出的第 3 张行动牌，视作上一张进入弃牌堆的行动牌「${name(eff)}」的复制。`, sourceId: 'wbawc' }
+          : undefined;
+      moves.push({ uid: c.uid, as: eff, why, label: eff === c.defId ? `打出「${name(c.defId)}」` : `打出「${name(c.defId)}」（视作「${name(eff)}」）` });
     }
     if (third) continue;
     for (const a of alts) {
       if (a.as === c.defId || !canPlayAs(g, p, a.as)) continue;
-      moves.push({ uid: c.uid, as: a.as, via: a.via, label: `将「${name(c.defId)}」当作「${name(a.as)}」打出（${a.via}）` });
+      const fromRole = a.reveals;
+      const skillText = fromRole ? roleDef(p.role).active.find((s) => s.name === a.via)?.text ?? '' : officialDef('soku').text;
+      moves.push({
+        uid: c.uid, as: a.as, via: a.via,
+        label: `将「${name(c.defId)}」当作「${name(a.as)}」打出（${a.via}）`,
+        why: fromRole
+          ? { title: `角色技能「${a.via}」`, text: `${roleDef(p.role).name}：${skillText}`, sourceId: p.role }
+          : { title: '官作「东方非想天则」', text: skillText, sourceId: 'soku' },
+        reveals: fromRole && !p.roleRevealed,
+      });
     }
   }
   moves.push(...Roles.skillMoves(g, p));
@@ -441,12 +456,20 @@ export async function playCard(g: Game, p: PlayerState, uid: string, as: string,
   await g.loseCards(p, [card]);
   t.actionsPlayed += 1;
   const d = actionDef(as);
+  // Where does an unusual play come from? Shown on the card as it lands.
+  let source: FxVia | undefined;
+  if (via) {
+    source = Roles.findAlt(g, p, as, via)?.reveals !== false && p.role && roleDef(p.role).active.some((s) => s.name === via)
+      ? { skill: via, sourceId: p.role }
+      : { skill: '东方非想天则', sourceId: 'soku' };
+  } else if (card.defId === 'human_nature') source = { skill: '人类的本质', sourceId: 'human_nature' };
+  else if (as !== card.defId) source = { skill: '东方鬼形兽', sourceId: 'wbawc' };
   g.log(
     `{p:${p.id}} 打出 {c:${card.defId}}${as !== card.defId ? ` 视作 {c:${as}}` : ''}`,
-    { type: 'play', playerId: p.id, cardId: card.defId, as: as !== card.defId ? as : undefined },
+    { type: 'play', playerId: p.id, cardId: card.defId, as: as !== card.defId ? as : undefined, via: source },
     'major',
   );
-  await g.pause(500);
+  await g.pause(1500);
   if (t.actionsPlayed === 3 && g.officialActive('ufo', p)) {
     g.log('「东方星莲船」：第三张行动牌，抽一张', undefined, 'minor');
     await g.draw(p, 1);

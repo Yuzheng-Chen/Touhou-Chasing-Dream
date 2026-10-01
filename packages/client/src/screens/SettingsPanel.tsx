@@ -89,6 +89,15 @@ export function SettingsPanel({ room }: { room: RoomView }) {
           />
         </Card>
 
+        <Card title="演出节奏" sub="出牌、技能与数值变化的停留时间">
+          <Segmented
+            value={s.pace}
+            options={[{ value: 'quick', label: '快速' }, { value: 'normal', label: '标准' }, { value: 'epic', label: '华丽' }]}
+            onChange={(v) => set({ pace: v as RoomSettings['pace'] })}
+            disabled={!editable}
+          />
+        </Card>
+
         <Card title="观战" sub="允许没有座位的人旁观进行中的游戏">
           <Toggle label="允许观战" value={s.allowSpectators} onChange={(v) => set({ allowSpectators: v })} disabled={!editable} />
         </Card>

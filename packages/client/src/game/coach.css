@@ -24,3 +24,6 @@
 .coach__count { margin-right: auto; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .coach__resume { position: fixed; left: 14px; bottom: 14px; z-index: 640; }
 @media (max-width: 760px) { .coach__tip { padding: 12px 14px; } }
+
+.coach__tip.is-compact { padding: 8px 12px; gap: 6px; }
+.coach__tip.is-compact .coach__title { font-size: 14px; }

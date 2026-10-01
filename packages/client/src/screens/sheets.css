@@ -5,7 +5,10 @@
   justify-items: center;
 }
 .gallery__item { position: relative; }
-.gallery__item .card:hover { transform: translateY(-4px); }
+/* Lift the card when its (stationary) wrapper is hovered, never the hovered card itself: otherwise a pointer near the
+   card's bottom edge loses hover as the card moves away, it drops back, regains hover… = flicker. */
+.gallery__item { padding-bottom: 6px; }
+.gallery__item:hover .card { transform: translateY(-4px); }
 .gallery__count {
   position: absolute;
   left: 6px;

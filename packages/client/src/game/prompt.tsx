@@ -1,9 +1,10 @@
-import type { CardInstance, Prompt, TurnMove } from '@tcd/shared';
+import { cardDef, type CardInstance, type Prompt, type TurnMove } from '@tcd/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../cards/Card';
 import { useStore } from '../store';
 import { playerColor } from '../ui/colors';
+import { GlossList } from '../ui/GlossList';
 import { RichText } from '../ui/RichText';
 import { Countdown } from './meters';
 
@@ -21,6 +22,11 @@ interface PromptUi {
   menuUid: string | null;
   setMenuUid(uid: string | null): void;
   send(value: unknown): void;
+  /** Choose a move; moves that would flip your role card ask for confirmation first. */
+  requestMove(index: number, move: TurnMove): void;
+  pending: { index: number; move: TurnMove } | null;
+  confirmPending(): void;
+  cancelPending(): void;
 }
 
 const Ctx = createContext<PromptUi | null>(null);
@@ -32,11 +38,13 @@ export function PromptProvider({ children }: { children: ReactNode }) {
   const [selCards, setSelCards] = useState<string[]>([]);
   const [selPlayers, setSelPlayers] = useState<string[]>([]);
   const [menuUid, setMenuUid] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ index: number; move: TurnMove } | null>(null);
 
   useEffect(() => {
     setSelCards([]);
     setSelPlayers([]);
     setMenuUid(null);
+    setPending(null);
   }, [prompt?.id]);
 
   const ui = useMemo<PromptUi>(() => ({
@@ -68,7 +76,22 @@ export function PromptProvider({ children }: { children: ReactNode }) {
     send(value) {
       if (prompt) answer(prompt.id, value);
     },
-  }), [prompt, selCards, selPlayers, menuUid, answer]);
+    pending,
+    requestMove(index, move) {
+      if (!prompt) return;
+      if (move.reveals) {
+        setMenuUid(null);
+        setPending({ index, move });
+      } else answer(prompt.id, { type: 'move', index });
+    },
+    confirmPending() {
+      if (prompt && pending) answer(prompt.id, { type: 'move', index: pending.index });
+      setPending(null);
+    },
+    cancelPending() {
+      setPending(null);
+    },
+  }), [prompt, selCards, selPlayers, menuUid, pending, answer]);
 
   return <Ctx.Provider value={ui}>{children}</Ctx.Provider>;
 }
@@ -111,6 +134,7 @@ export function PromptPanel() {
           <div className="decide__titles">
             <div className="decide__title"><RichText text={p.title} /></div>
             {p.body && <div className="decide__body"><RichText text={p.body} /></div>}
+            {p.reveals && game.me?.role && <div className="decide__warn">⚠ 选择发动会翻开你的角色牌「{cardDef(game.me.role).name}」，其他玩家将知道你的身份。</div>}
           </div>
           {p.deadline > 0 && <Countdown key={p.id} deadline={p.deadline} />}
         </div>
@@ -131,8 +155,15 @@ function PromptBody({ p }: { p: Prompt }) {
         <div className="decide__row">
           <span className="decide__hint">{cardMoves ? '点击发光的手牌打出' : '没有可打出的手牌'}</span>
           {skills.map(({ m, i }) => (
-            <button key={i} className="btn btn--gold btn--sm" onClick={() => ui.send({ type: 'move', index: i })}>
-              ✦ {m.label}
+            <button
+              key={i}
+              className="btn btn--gold btn--sm"
+              title={m.why?.text}
+              onMouseEnter={() => m.why?.sourceId && useStore.getState().setHover(m.why.sourceId)}
+              onMouseLeave={() => useStore.getState().setHover(null)}
+              onClick={() => ui.requestMove(i, m)}
+            >
+              ✦ {m.label}{m.reveals && <span className="btn__warn" title="会翻开你的角色牌">⚠</span>}
             </button>
           ))}
           <button className="btn btn--primary" onClick={() => ui.send({ type: 'end' })}>结束行动</button>
@@ -268,8 +299,16 @@ export function PlayMenu({ uid }: { uid: string }) {
   return (
     <motion.div className="playmenu" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onClick={(e) => e.stopPropagation()}>
       {moves.map(({ move, index }) => (
-        <button key={index} className="playmenu__item" onClick={() => ui.send({ type: 'move', index })}>
-          {move.label}
+        <button
+          key={index}
+          className="playmenu__item"
+          onMouseEnter={() => move.why?.sourceId && useStore.getState().setHover(move.why.sourceId)}
+          onMouseLeave={() => useStore.getState().setHover(null)}
+          onClick={() => ui.requestMove(index, move)}
+        >
+          <span className="playmenu__label">{move.label}</span>
+          {move.why && <small className="playmenu__why"><b>{move.why.title}</b>{move.why.text}</small>}
+          {move.reveals && <em className="playmenu__reveal">⚠ 会翻开你的角色牌</em>}
         </button>
       ))}
       <button className="playmenu__item playmenu__item--cancel" onClick={() => ui.setMenuUid(null)}>取消</button>
@@ -283,6 +322,7 @@ export function RolePicker() {
   const ui = usePromptUi();
   const p = ui.prompt;
   const [picked, setPicked] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const chosen = game.me?.role ?? picked;
   if (game.phase !== 'roleSelect') return null;
   const choosing = p?.kind === 'choice';
@@ -291,8 +331,16 @@ export function RolePicker() {
       <h2 className="rolepick__title">{choosing ? '选择你的角色' : '等待其他玩家选择角色…'}</h2>
       <p className="rolepick__sub">角色的阵营决定胜利条件。在发动主动技能之前，请对其他玩家保密。</p>
       <div className="rolepick__cards">
-        {(game.me?.roleOptions ?? []).map((id, i) => (
-          <motion.div key={id} initial={{ opacity: 0, y: 30, rotate: (i - 1) * 3 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * i }}>
+        {(game.me?.roleOptions ?? []).map((id, i, all) => (
+          <motion.div
+            key={id}
+            className="rolepick__item"
+            initial={{ opacity: 0, y: 30, rotate: (i - 1) * 3 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 * i }}
+            onMouseEnter={() => setOver(id)}
+            onMouseLeave={() => setOver((o) => (o === id ? null : o))}
+          >
             <Card
               id={id}
               size="xl"
@@ -301,10 +349,41 @@ export function RolePicker() {
               dim={!!chosen && chosen !== id && !choosing}
               onClick={choosing ? () => { setPicked(id); ui.send(id); } : undefined}
             />
+            {over === id && <GlossList id={id} className={`rolepick__gloss ${i >= all.length - 1 && all.length > 1 ? 'is-left' : ''}`} />}
           </motion.div>
         ))}
       </div>
       {p?.deadline ? <Countdown key={p.id} deadline={p.deadline} /> : null}
     </motion.div>
+  );
+}
+
+/** "This will flip your role card" confirmation. */
+export function RevealConfirm() {
+  const ui = usePromptUi();
+  const role = useStore((s) => s.game?.me?.role);
+  const p = ui.pending;
+  return (
+    <AnimatePresence>
+      {p && role && (
+        <motion.div className="sheet-backdrop revealconfirm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={ui.cancelPending}>
+          <motion.div className="revealconfirm__box" initial={{ scale: 0.92, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()}>
+            <Card id={role} size="md" noPreview />
+            <div className="revealconfirm__body">
+              <h3>要翻开你的角色牌吗？</h3>
+              <p>
+                「{p.move.label}」是<b>主动技能</b>：发动后你的角色牌「{cardDef(role).name}」会<b>正面向上</b>，
+                所有玩家都会知道你的身份和立场，并且不能再翻回去。
+              </p>
+              {p.move.why && <p className="revealconfirm__why">{p.move.why.text}</p>}
+              <div className="revealconfirm__actions">
+                <button className="btn" onClick={ui.cancelPending}>再想想</button>
+                <button className="btn btn--gold" autoFocus onClick={ui.confirmPending}>翻开并发动</button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

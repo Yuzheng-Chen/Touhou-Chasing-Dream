@@ -344,3 +344,39 @@
 .card--official.card--xl .card__name { font-size: calc(var(--w) * 0.07); }
 .card--official.card--lg .card__sub,
 .card--official.card--xl .card__sub { font-size: calc(var(--w) * 0.032); }
+
+/* ── Typography alignment ──
+   Vertical role names: centre the glyphs inside the strip on both axes (letter-spacing adds a trailing gap that would
+   otherwise push the text up/left), and give pill labels a line box that centres CJK glyphs optically. */
+.card__vname {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--w) * 0.17);
+  padding: calc(var(--w) * 0.055) 0 calc(var(--w) * 0.055 - 0.12em);
+  line-height: 1;
+  text-align: center;
+  letter-spacing: 0.08em;
+}
+.card--xs .card__vname, .card--sm .card__vname { width: clamp(11px, calc(var(--w) * 0.19), 17px); padding: 3px 0 2px; letter-spacing: 0; }
+.card__badge, .card__kind, .card__ribbon b, .card__ribbon span, .card__dirs .dir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding-block: 0.34em;
+  min-height: 1.9em;
+}
+.card__badge { padding-inline: 0.7em; font-size: clamp(9px, calc(var(--w) * 0.062), 14px); }
+.card__text .dir, .card__text .skill { display: inline-flex; align-items: center; line-height: 1.35; vertical-align: baseline; }
+
+
+/* Role cards: the faction badge sits above the text panel on large sizes. The medium-size rule gives it a `top`;
+   without clearing it the badge had both top and bottom set and stretched into a huge circle. */
+.card--role.card--lg .card__badge,
+.card--role.card--xl .card__badge { top: auto; align-self: auto; }
+
+/* Big role cards: keep the name clear of the 角色 tag in the corner. */
+.card--role.card--lg .card__plate,
+.card--role.card--xl .card__plate { padding-right: calc(var(--w) * 0.27); padding-left: calc(var(--w) * 0.05); }

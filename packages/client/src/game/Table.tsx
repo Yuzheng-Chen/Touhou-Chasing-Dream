@@ -11,7 +11,8 @@ import { playerColor } from '../ui/colors';
 import { Center } from './Center';
 import { FxLayer } from './Fx';
 import { MyArea } from './MyArea';
-import { PromptProvider, RolePicker } from './prompt';
+import { PromptProvider, RevealConfirm, RolePicker } from './prompt';
+import { VoteModal, proposeAbort } from './Vote';
 import { Results } from './Results';
 import { Seat } from './Seat';
 import { SidePanel } from './SidePanel';
@@ -59,6 +60,8 @@ export function Table() {
           <SidePanel />
         </div>
         <Shortcuts />
+        <RevealConfirm />
+        <VoteModal />
         {room?.tutorial && <Coach />}
         <FxLayer />
         <AnimatePresence>{game.phase === 'roleSelect' && <RolePicker />}</AnimatePresence>
@@ -119,6 +122,11 @@ function TopBar({ onToggleSide }: { onToggleSide: () => void }) {
         <button className="btn btn--ghost btn--sm topbar__sidetoggle" onClick={onToggleSide}>
           战况{unread > 0 && <span className="dot">{unread}</span>}
         </button>
+        {game.me && game.phase !== 'finished' && (
+          <button className="btn btn--ghost btn--sm topbar__abort" title="发起投票：放弃这一局，回到房间" onClick={() => proposeAbort()}>
+            {room?.tutorial ? '结束教学' : '中止本局'}
+          </button>
+        )}
         <button className="btn btn--sm" onClick={leave}>离开</button>
       </div>
     </header>

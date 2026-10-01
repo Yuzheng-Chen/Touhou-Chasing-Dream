@@ -953,7 +953,7 @@
   flex-wrap: wrap;
   justify-content: center;
 }
-.rolepick__cards .card.is-clickable:hover { transform: translateY(-10px) scale(1.02); }
+.rolepick__cards > .rolepick__item:hover .card.is-clickable { transform: translateY(-10px) scale(1.02); }
 
 /* ───────── Results ───────── */
 .results { z-index: 700; }
@@ -1199,3 +1199,45 @@
 .emotepicker__pop button { width: 40px; height: 40px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.05); font-size: 22px; transition: transform 0.15s, background 0.15s; }
 .emotepicker__pop button:hover { transform: scale(1.15); background: rgba(216, 178, 90, 0.2); }
 .seat__signal { margin-left: auto; }
+
+/* Keyword boxes next to the role card under the pointer (role selection). */
+.rolepick__item { position: relative; }
+.rolepick__gloss { position: absolute; top: 0; left: calc(100% + 12px); z-index: 5; pointer-events: none; }
+.rolepick__gloss.is-left { left: auto; right: calc(100% + 12px); }
+@media (max-width: 1100px) { .rolepick__gloss { display: none; } }
+
+/* ───────── Move explanations & reveal confirmation ───────── */
+.playmenu { min-width: 340px; max-width: 420px; }
+.playmenu__item { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.playmenu__label { font-weight: 700; }
+.playmenu__why { font-size: 12px; line-height: 1.5; color: var(--text-dim); white-space: normal; }
+.playmenu__why b { display: block; color: var(--gold-bright); font-weight: 700; }
+.playmenu__reveal { font-style: normal; font-size: 12px; color: #ffb38a; }
+.btn__warn { margin-left: 6px; color: #ffb38a; }
+.decide__warn { margin-top: 6px; padding: 5px 10px; border-radius: 8px; background: rgba(217, 68, 58, 0.18); border: 1px solid rgba(217, 68, 58, 0.55); font-size: 12.5px; color: #ffc9b8; }
+.revealconfirm { z-index: 810; }
+.revealconfirm__box { display: flex; gap: 20px; align-items: flex-start; max-width: 560px; padding: 22px; border-radius: var(--radius-lg); background: linear-gradient(180deg, rgba(40, 35, 72, 0.99), rgba(20, 18, 37, 0.99)); border: 1px solid var(--gold-bright); box-shadow: var(--shadow-lg); }
+.revealconfirm__body { display: flex; flex-direction: column; gap: 10px; }
+.revealconfirm__body h3 { margin: 0; font-family: var(--font-serif); font-size: 22px; color: var(--gold-bright); }
+.revealconfirm__body p { margin: 0; line-height: 1.7; font-size: 14px; }
+.revealconfirm__why { color: var(--text-dim); font-size: 12.5px !important; }
+.revealconfirm__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+@media (max-width: 560px) { .revealconfirm__box { flex-direction: column; align-items: center; } }
+
+/* ───────── Abort vote ───────── */
+.votemodal {
+  position: fixed; top: 74px; left: 50%; margin-left: -210px; width: 420px; z-index: 760; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(40, 35, 72, 0.99), rgba(24, 21, 44, 0.99)); border: 1px solid rgba(240, 106, 93, 0.7); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(240, 106, 93, 0.25);
+}
+.votemodal__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.votemodal__head > div { display: flex; flex-direction: column; }
+.votemodal__head b { font-family: var(--font-serif); font-size: 17px; color: #ffb38a; letter-spacing: 0.08em; }
+.votemodal__head span { font-size: 13px; color: var(--text-dim); }
+.votemodal__voters { display: flex; flex-wrap: wrap; gap: 6px; }
+.voter { padding: 2px 10px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--hairline); background: rgba(255, 255, 255, 0.05); }
+.voter--yes { border-color: rgba(88, 194, 143, 0.7); color: #9be3c0; }
+.voter--no { border-color: rgba(239, 107, 107, 0.7); color: #ffa7a7; }
+.votemodal__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.votemodal__wait { margin: 0; font-size: 13px; color: var(--text-dim); }
+@media (max-width: 760px) { .votemodal { left: 8px; right: 8px; margin-left: 0; width: auto; } .topbar__abort { display: none; } }
+.rolepick__item:hover { z-index: 20; }

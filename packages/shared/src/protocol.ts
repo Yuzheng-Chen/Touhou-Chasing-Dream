@@ -17,6 +17,8 @@ interface PromptBase {
   cardId?: string;
   /** Epoch ms when the server will auto-answer with `defaultValue`. */
   deadline: number;
+  /** Saying yes to this prompt reveals the player's face-down role card (show a warning). */
+  reveals?: boolean;
 }
 
 /** A move available in the action phase. */
@@ -30,6 +32,10 @@ export interface TurnMove {
   label: string;
   /** Source of an alternative play, e.g. role skill name or official card. */
   via?: string;
+  /** Why this option exists (shown on hover): the skill / official / card that allows it. */
+  why?: { title: string; text: string; sourceId?: string };
+  /** Using it turns the player's role card face-up: ask for confirmation first. */
+  reveals?: boolean;
 }
 
 export type Prompt =
@@ -89,11 +95,22 @@ export type PromptSpec = Prompt extends infer P ? (P extends Prompt ? Omit<P, 'i
 //  Log + effects. Log text uses tokens: {p:playerId} {c:cardDefId} {n:+3}
 // ════════════════════════════════════════════════════════════════════
 
+/** Where a card's unusual effect comes from, e.g. 传教爱好者's 「传教」 skill or 东方鬼形兽. */
+export interface FxVia {
+  skill: string;
+  sourceId: string;
+  /** What the card was treated as. */
+  text?: string;
+}
+
 export type Fx =
-  | { type: 'play'; playerId: string; cardId: string; as?: string; targetIds?: string[] }
+  | { type: 'play'; playerId: string; cardId: string; as?: string; targetIds?: string[]; via?: FxVia }
+  | { type: 'target'; fromId: string; toIds: string[]; cardId?: string }
+  | { type: 'mod'; label: string; amount: string; sourceId?: string; playerId?: string }
+  | { type: 'skill'; playerId: string; roleId: string; skill: string; passive?: boolean; reveals?: boolean }
   | { type: 'dice'; playerId: string; face: number; judge: JudgeKind; result: number | boolean }
-  | { type: 'community'; from: number; to: number }
-  | { type: 'influence'; playerId: string; from: number; to: number }
+  | { type: 'community'; from: number; to: number; cardId?: string; by?: string }
+  | { type: 'influence'; playerId: string; from: number; to: number; cardId?: string; by?: string }
   | { type: 'event'; playerId: string; cardId: string; direction: EventDirection }
   | { type: 'official'; cardId: string }
   | { type: 'reveal'; playerId: string; roleId: string }
@@ -249,12 +266,30 @@ export interface RoomSettings {
   balancedRoles: boolean;
   /** Let people who are not seated watch a running game. */
   allowSpectators: boolean;
+  /** Pacing of effects: how long the server lingers on each card, skill and number change. */
+  pace: 'quick' | 'normal' | 'epic';
 }
 
 export const DEFAULT_SETTINGS: RoomSettings = {
   roleChoices: 3, promptTimeout: 60, botDelay: 900,
-  rounds: 0, startingHand: 2, firstPlayer: 'random', balancedRoles: true, allowSpectators: true,
+  rounds: 0, startingHand: 2, firstPlayer: 'random', balancedRoles: true, allowSpectators: true, pace: 'normal',
 };
+/** Multiplier on the server's effect pauses. */
+export const PACE_FACTOR = { quick: 0.55, normal: 1, epic: 1.45 } as const;
+
+/** A vote among the humans at the table (currently only: abandon the game and return to the room). */
+export interface VoteView {
+  id: string;
+  kind: 'abort';
+  byId: string;
+  byName: string;
+  /** Human voters. */
+  voters: string[];
+  yes: string[];
+  no: string[];
+  /** Epoch ms; an unanswered vote counts as a refusal. */
+  deadline: number;
+}
 export const SETTING_LIMITS = { roleChoices: [1, 6], promptTimeout: [0, 300], botDelay: [200, 2400], rounds: [2, 12], startingHand: [1, 5] } as const;
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 8;
@@ -321,6 +356,9 @@ export interface ClientToServer {
   'game:emote': (p: { emote: string }) => void;
   /** Start a coached tutorial game (you + two AI). */
   'room:tutorial': (ack: Ack<{ roomId: string }>) => void;
+  /** Propose abandoning the current game and returning to the room; every human must agree. */
+  'vote:start': (ack: Ack<null>) => void;
+  'vote:cast': (p: { yes: boolean }) => void;
 }
 
 export interface ServerToClient {
@@ -329,4 +367,5 @@ export interface ServerToClient {
   'chat:message': (msg: ChatMessage) => void;
   'toast': (p: { text: string; tone?: Tone }) => void;
   'game:emote': (p: { fromId: string; emote: string; at: number }) => void;
+  'vote:state': (v: VoteView | null) => void;
 }

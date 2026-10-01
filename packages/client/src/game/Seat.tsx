@@ -17,12 +17,13 @@ export function Seat({ p, style }: { p: PlayerView; style?: CSSProperties }) {
   const thinking = game.waitingOn.includes(p.id);
   const pickable = ui.prompt?.kind === 'players' && ui.prompt.candidates.includes(p.id);
   const picked = ui.selPlayers.includes(p.id);
+  const targeted = useStore((s) => s.targeted.includes(p.id));
   const idol = p.idolId ? game.players.find((x) => x.id === p.idolId) : null;
 
   return (
     <motion.div
       layout
-      className={['seat', isTurn && 'is-turn', thinking && 'is-thinking', pickable && 'is-pickable', picked && 'is-picked', !p.connected && 'is-offline'].filter(Boolean).join(' ')}
+      className={['seat', isTurn && 'is-turn', targeted && 'is-target', thinking && 'is-thinking', pickable && 'is-pickable', picked && 'is-picked', !p.connected && 'is-offline'].filter(Boolean).join(' ')}
       style={{ '--seat': playerColor(p.seat), ...style } as CSSProperties}
       onClick={pickable ? () => ui.togglePlayer(p.id) : undefined}
       data-seat-id={p.id}

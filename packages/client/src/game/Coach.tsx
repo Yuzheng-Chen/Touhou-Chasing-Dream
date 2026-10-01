@@ -195,11 +195,21 @@ export function Coach() {
   // Placement: tips about the upper board sit next to their target. Tips about your own area (hand, decision panel,
   // events) are docked at the left edge instead, so they never cover the controls the player has to use.
   const wide = window.innerWidth >= 1100;
+  let compact = false;
   const W = wide ? 290 : Math.min(340, window.innerWidth - 24);
   let style: React.CSSProperties = { left: 12, right: 12, bottom: 12, margin: '0 auto', width: W, maxHeight: '38vh', overflow: 'auto' };
   if (wide) {
     const lowerArea = !!tip?.target && DOCKED.some((s) => tip.target!.startsWith(s));
-    const dock: React.CSSProperties = { left: 14, top: 78, width: W };
+    // Docked at the left edge. If the decision panel reaches into that column, only use the free space above it
+    // (compact bar when there is little), or sit just under it.
+    const clash = !!decide && decide.left < 14 + W + 12;
+    const room = decide ? decide.top - 90 : Infinity;
+    const dock: React.CSSProperties = !clash || room >= 150
+      ? { left: 14, top: 78, width: W, maxHeight: clash ? room : undefined, overflow: 'auto' }
+      : decide!.top < 190
+        ? { left: 14, top: decide!.bottom + 10, width: W }
+        : { left: 14, top: 78, width: W };
+    compact = clash && room < 150;
     if (lowerArea || !rect || !tip) style = dock;
     else {
       const h = 110 + Math.ceil(tip.body.length / 20) * 22; // rough height of the tip card
@@ -228,9 +238,9 @@ export function Coach() {
       </AnimatePresence>
       <AnimatePresence mode="wait">
         {tip && (
-          <motion.div key={tip.id} className="coach__tip" style={style} initial={{ opacity: 0, y: 10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.22 }}>
+          <motion.div key={tip.id} className={`coach__tip ${compact ? 'is-compact' : ''}`} style={style} initial={{ opacity: 0, y: 10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.22 }}>
             <div className="coach__title">{tip.title}</div>
-            <p>{tip.body}</p>
+            {!compact && <p>{tip.body}</p>}
             <div className="coach__actions">
               <span className="coach__count">{done}/{TIPS.length - 1}</span>
               <button className="btn btn--ghost btn--sm" onClick={() => setOff(true)}>跳过教学</button>

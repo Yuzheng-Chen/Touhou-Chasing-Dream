@@ -31,6 +31,13 @@ export function ACT(r) {
     return 'role';
   }
 
+  // A reveal confirmation is open → confirm (a human would, having chosen that move on purpose).
+  const rc = $('.revealconfirm__actions .btn--gold');
+  if (rc) {
+    click(rc);
+    return 'reveal-confirm';
+  }
+
   // A "how to play this card" menu is open → choose one way.
   const menu = $$('.playmenu__item:not(.playmenu__item--cancel)');
   if (menu.length) {

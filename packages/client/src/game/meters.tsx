@@ -34,6 +34,7 @@ export function PulseFloat({ target }: { target: string }) {
 
 /** 社群规模 track from −10 (小众) to +10 (繁荣) with a yin-yang orb marker. */
 export function CommunityMeter({ value }: { value: number }) {
+  const hit = useStore((s) => s.meterHit);
   const pct = ((value + COMMUNITY_LIMIT) / (2 * COMMUNITY_LIMIT)) * 100;
   return (
     <div className="cmeter" aria-label={`社群规模 ${value}`}>
@@ -49,6 +50,7 @@ export function CommunityMeter({ value }: { value: number }) {
         ))}
         <motion.div className="cmeter__orb" animate={{ left: `${pct}%`, rotate: value * 36 }} transition={{ type: 'spring', stiffness: 120, damping: 14 }}>
           <YinYang size={34} />
+          {hit > 0 && <i key={hit} className="orb-ring" />}
         </motion.div>
       </div>
       <div className="cmeter__value">

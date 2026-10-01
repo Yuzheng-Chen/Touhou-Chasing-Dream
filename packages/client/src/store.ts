@@ -1,4 +1,4 @@
-import type { ChatMessage, GameView, LogEntry, RoomView, Tone } from '@tcd/shared';
+import type { ChatMessage, GameView, LogEntry, RoomView, Tone, VoteView } from '@tcd/shared';
 import { create } from 'zustand';
 import { sfx } from './audio';
 import { SEAT, request, saveName, savedName, sessionToken, socket } from './net';
@@ -48,6 +48,13 @@ interface State {
   flights: Flight[];
   /** Bumps when something big happens (large community swing) → the table shakes. */
   shake: number;
+  /** Seats currently targeted by a card (highlighted for a moment). */
+  targeted: string[];
+  /** The pending abandon-game vote, if any. */
+  vote: VoteView | null;
+  /** Bumps on every community change so the meter can flash. */
+  meterHit: number;
+  setMeterHit(): void;
   endFlight(id: number): void;
 
   setName(n: string): void;
@@ -82,6 +89,12 @@ export const useStore = create<State>((set, get) => ({
   emotes: {},
   flights: [],
   shake: 0,
+  targeted: [],
+  vote: null,
+  meterHit: 0,
+  setMeterHit() {
+    set({ meterHit: get().meterHit + 1 });
+  },
   endFlight(id) {
     set({ flights: get().flights.filter((f) => f.id !== id) });
   },
@@ -147,8 +160,10 @@ function hello() {
 
 // ── game state ingestion ──────────────────────────────────────
 
-const FX_TYPES = ['play', 'dice', 'event', 'official', 'reveal'];
-const FX_SOUND = { play: 'play', dice: 'dice', event: 'event', official: 'official', reveal: 'reveal' } as const;
+/** Log effects that get an on-screen moment (played one after another by FxLayer). */
+export const FX_TYPES = ['play', 'dice', 'event', 'official', 'reveal', 'skill', 'mod', 'community', 'influence'];
+/** In "reduce motion" mode there is no playback, so these sounds fire straight away instead. */
+const QUICK_SOUND: Record<string, Parameters<typeof sfx>[0]> = { play: 'play', dice: 'dice', event: 'event', official: 'official', reveal: 'reveal', skill: 'reveal' };
 
 function ingestGame(game: GameView | null) {
   const st = useStore.getState();
@@ -164,47 +179,50 @@ function ingestGame(game: GameView | null) {
   }
   const incoming = game.log.filter((e) => e.seq > st.lastSeq);
   const pulses = { ...st.pulses };
-  let mood: 'up' | 'down' | null = null;
   const reduced = document.documentElement.classList.contains('reduce-motion');
   const flights = [...st.flights];
   let shake = st.shake;
+  let targeted: string[] | null = null;
   for (const e of incoming) {
-    if (!reduced && e.fx?.type === 'draw') flights.push({ id: ++pulseSeq, from: 'deck', to: e.fx.playerId, n: e.fx.count });
-    if (!reduced && e.fx?.type === 'transfer') flights.push({ id: ++pulseSeq, from: e.fx.fromId, to: e.fx.toId, n: e.fx.count });
-    if (!reduced && e.fx?.type === 'community' && Math.abs(e.fx.to - e.fx.from) >= 4) shake++;
-    if (e.fx?.type === 'community') {
-      const d = e.fx.to - e.fx.from;
-      pulses.community = { delta: d, key: ++pulseSeq };
-      mood = d > 0 ? 'up' : 'down';
+    const fx = e.fx;
+    if (!fx) continue;
+    if (!reduced && fx.type === 'draw') flights.push({ id: ++pulseSeq, from: 'deck', to: fx.playerId, n: fx.count });
+    if (!reduced && fx.type === 'transfer') flights.push({ id: ++pulseSeq, from: fx.fromId, to: fx.toId, n: fx.count });
+    if (!reduced && fx.type === 'community' && Math.abs(fx.to - fx.from) >= 3) shake++;
+    if (fx.type === 'target') targeted = fx.toIds;
+    if (fx.type === 'community') pulses.community = { delta: fx.to - fx.from, key: ++pulseSeq };
+    if (fx.type === 'influence') pulses[fx.playerId] = { delta: fx.to - fx.from, key: ++pulseSeq };
+    if (reduced) {
+      if (fx.type in QUICK_SOUND) sfx(QUICK_SOUND[fx.type]);
+      if (fx.type === 'community' || (fx.type === 'influence' && fx.playerId === st.playerId)) sfx((fx.type === 'community' ? fx.to - fx.from : fx.to - fx.from) > 0 ? 'up' : 'down');
     }
-    if (e.fx?.type === 'influence') {
-      const d = e.fx.to - e.fx.from;
-      pulses[e.fx.playerId] = { delta: d, key: ++pulseSeq };
-      if (e.fx.playerId === st.playerId) mood = d > 0 ? 'up' : 'down';
-    }
-    if (e.fx && e.fx.type in FX_SOUND) sfx(FX_SOUND[e.fx.type as keyof typeof FX_SOUND]);
-    else if (e.fx?.type === 'draw' && e.fx.playerId === st.playerId) sfx('draw');
+    if (fx.type === 'draw' && fx.playerId === st.playerId) sfx('draw');
   }
-  if (mood && !incoming.some((e) => e.fx && FX_TYPES.includes(e.fx.type))) sfx(mood);
 
   // Personal cues: my turn begins / the game ends.
   const me = st.playerId;
   if (me && game.currentPlayerId === me && st.game?.currentPlayerId !== me) sfx('turn');
   if (me && game.phase === 'finished' && st.game?.phase !== 'finished') sfx(game.result?.winnerIds.includes(me) ? 'win' : 'lose');
 
-  const fx = document.documentElement.classList.contains('reduce-motion') ? [] : incoming.filter((e) => e.fx && FX_TYPES.includes(e.fx.type));
-  // If we fell far behind (tab in background), drop the backlog of animations.
-  const queue = [...st.fxQueue, ...fx];
+  const queued = reduced ? [] : incoming.filter((e) => e.fx && FX_TYPES.includes(e.fx.type));
+  const queue = [...st.fxQueue, ...queued];
   useStore.setState({
     game,
     lastSeq: Math.max(st.lastSeq, newest),
     pulses,
     flights: flights.slice(-6),
     shake,
-    fxQueue: queue.length > 6 ? queue.slice(-2) : queue,
+    // A tab that fell far behind drops its oldest animations rather than replaying minutes of history.
+    fxQueue: queue.length > 14 ? queue.slice(-5) : queue,
   });
+  if (targeted && !reduced) {
+    const ids = targeted;
+    useStore.setState({ targeted: ids });
+    setTimeout(() => {
+      if (useStore.getState().targeted === ids) useStore.setState({ targeted: [] });
+    }, 2200);
+  }
 }
-
 // ── socket wiring ─────────────────────────────────────────────
 // Latency: time a ping/ack round trip, smooth it, and report it so every player's seat can show it.
 let pingTimer: ReturnType<typeof setInterval> | undefined;
@@ -232,7 +250,7 @@ socket.on('connect', () => {
   pingTimer = setInterval(measurePing, 3000);
 });
 socket.on('disconnect', () => {
-  useStore.setState({ connected: false, ping: null });
+  useStore.setState({ connected: false, ping: null, vote: null });
   clearInterval(pingTimer);
 });
 socket.on('game:emote', ({ fromId, emote }) => {
@@ -252,6 +270,7 @@ socket.on('room:state', (room) => {
   if (location.pathname + location.search !== want) history.replaceState(null, '', want);
 });
 socket.on('game:state', ingestGame);
+socket.on('vote:state', (vote) => useStore.setState({ vote }));
 socket.on('chat:message', (msg) => {
   const st = useStore.getState();
   if (st.chat.some((m) => m.id === msg.id)) return;

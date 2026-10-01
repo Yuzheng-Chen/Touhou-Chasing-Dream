@@ -17,9 +17,10 @@ export function MyArea() {
   const me = game.me;
   if (!me || !meView) return <SpectatorBar />;
   const isTurn = game.currentPlayerId === me.id;
+  const targeted = useStore((s) => s.targeted.includes(me.id));
 
   return (
-    <div className={`myarea ${isTurn ? 'is-turn' : ''}`} style={{ '--seat': playerColor(meView.seat) } as CSSProperties}>
+    <div className={`myarea ${isTurn ? 'is-turn' : ''} ${targeted ? 'is-target' : ''}`} style={{ '--seat': playerColor(meView.seat) } as CSSProperties}>
       <div className="myarea__prompt">
         {meView.auto && (
           <div className="autobar">
@@ -123,7 +124,8 @@ function Hand() {
             : playable
               ? (e: React.MouseEvent) => {
                 e.stopPropagation();
-                if (moves.length === 1) ui.send({ type: 'move', index: moves[0].index });
+                // A lone, ordinary move is played at once; anything with an explanation (a skill, an official, a copy) shows the menu first.
+                if (moves.length === 1 && !moves[0].move.why && !moves[0].move.reveals) ui.requestMove(moves[0].index, moves[0].move);
                 else ui.setMenuUid(ui.menuUid === c.uid ? null : c.uid);
               }
               : undefined;

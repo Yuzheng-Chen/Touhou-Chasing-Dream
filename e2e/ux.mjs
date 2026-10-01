@@ -23,7 +23,8 @@ const server = await startServer(args.url);
 const browser = await chromium.launch({ headless: args.headed !== 'true' });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 820 } });
 const page = await ctx.newPage();
-const problems = [];
+const problems = [];page.on('dialog', (d) => d.accept());
+
 page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
 page.on('console', (m) => m.type() === 'error' && !/favicon|Failed to load resource/.test(m.text()) && problems.push(`console: ${m.text()}`));
 
@@ -151,6 +152,50 @@ try {
   const r2 = await page.evaluate(() => { const r = document.querySelector('.card-preview').getBoundingClientRect(); return { l: r.left, r: r.right }; });
   assert.ok(r2.l >= 0 && r2.r <= 1440, 'preview stays inside the viewport near the right edge');
 
+  // ── No flicker when the pointer rests on a card's bottom edge (the card used to lift away from under it) ──
+  await page.click('.tabs .tab:has-text("行动")');
+  await sleep(250);
+  const edge = await page.locator('.gallery .card[data-card="rumor"]').boundingBox();
+  await page.mouse.move(6, 410);
+  await page.evaluate(() => {
+    window.__samples = [];
+    const tick = () => {
+      const el = document.querySelector('.card-preview');
+      window.__samples.push(el && el.querySelector('.card') ? 1 : 0);
+      if (window.__samples.length < 70) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height - 1.5, { steps: 1 });
+  await sleep(1300);
+  const samples = await page.evaluate(() => window.__samples);
+  const flips = samples.slice(1).filter((v, i) => v !== samples[i]).length;
+  assert.ok(flips <= 1, `preview flickered ${flips} times while the pointer rested on a card edge: ${samples.join('')}`);
+  log('no hover flicker at the card edge');
+
+  // ── The wheel scrolls long card text inside the preview, without scrolling the gallery behind it ──
+  await page.click('.tabs .tab:has-text("角色")');
+  await sleep(250);
+  let before = null;
+  for (const id of ['original_player', 'oshi', 'local_king', 'doomsayer', 'cosplayer', 'anti_profit']) {
+    const b = await page.locator(`.gallery .card[data-card="${id}"]`).boundingBox();
+    if (!b) continue;
+    await page.mouse.move(6, 410);
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 3 });
+    await sleep(350);
+    before = await page.evaluate(() => {
+      const t = document.querySelector('.card-preview .card__text');
+      return t ? { text: t.scrollTop, sheet: document.querySelector('.sheet__body').scrollTop, over: t.scrollHeight > t.clientHeight + 2 } : null;
+    });
+    if (before?.over) break;
+  }
+  assert.ok(before?.over, 'some role card text overflows its box in the preview (precondition)');  assert.ok(await page.locator('.card-preview__hint').count(), 'overflowing text shows a scroll hint');
+  await page.mouse.wheel(0, 160);
+  await sleep(250);
+  const after = await page.evaluate(() => ({ text: document.querySelector('.card-preview .card__text').scrollTop, sheet: document.querySelector('.sheet__body').scrollTop }));
+  assert.ok(after.text > before.text, `wheel scrolled the preview text (${before.text} → ${after.text})`);
+  assert.equal(after.sheet, before.sheet, 'the gallery behind did not scroll');
+  log('wheel scrolls long preview text');
   // ── Closing the gallery while the pointer is over a card must clear the preview ──
   await page.keyboard.press('Escape');
   await sleep(500);
@@ -203,11 +248,72 @@ try {
   assert.ok(lobbyPing >= 0 && lobbyPing < 1000, `ping looks sane: ${lobbyPing}`);
   log(`latency indicator: ${lobbyPing} ms`);
 
+  // ── Role selection: keyword boxes on hover; then the in-game abort vote returns to the room ──
+  await page.click('.lobby__foot .btn--primary');
+  await page.waitForSelector('.rolepick');
+  await sleep(700);
+  const firstRole = await page.locator('.rolepick__item .card').first().boundingBox();
+  await page.mouse.move(firstRole.x + firstRole.width / 2, firstRole.y + firstRole.height / 2, { steps: 3 });
+  await page.waitForSelector('.rolepick__gloss .gloss__box', { timeout: 3000 });
+  const roleGloss = await page.$$eval('.rolepick__gloss .gloss__term', (els) => els.map((e) => e.textContent));
+  assert.ok(roleGloss.some((t) => /·/.test(t)), `role cards explain their faction: ${roleGloss}`);
+  await page.screenshot({ path: `${OUT}/ux-rolepick-gloss.png` });
+  log('role selection hover shows keyword boxes:', roleGloss.join(' | '));
+  await page.locator('.rolepick__item .card').first().click();
+  await page.waitForSelector('.table', { timeout: 10000 });
+  await page.click('.topbar__abort');
+  await page.waitForSelector('.lobby__code', { timeout: 8000 }); // sole human + AI: the vote passes at once
+  log('中止本局 returned to the room');
+  await page.waitForSelector('.lobby__head-actions .btn:has-text("离开")');
   // ── Tutorial with coach ──────────────────────────────────────────────────────
   await page.click('.lobby__head-actions .btn:has-text("离开")');
   await page.waitForSelector('.home__tutorial');
   await page.click('.home__tutorial');
   await page.waitForSelector('.table', { timeout: 15000 });
+  await page.evaluate(() => {
+    window.__fxSeen = new Set();
+    const root = document.querySelector('.fx');
+    new MutationObserver((ms) => {
+      for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) [n, ...n.querySelectorAll('*')].forEach((e) => String(e.className).split(' ').forEach((c) => c.startsWith('fx__') && window.__fxSeen.add(c)));
+    }).observe(root, { childList: true, subtree: true });
+  });
+  let viaDone = false;
+  /** Play a card "as 传教" with the real mouse: explanation on hover, source preview, reveal confirmation. */
+  async function viaFlow() {
+    const cards = page.locator('.hand .card.is-playable');
+    const n = await cards.count();
+    for (let i = 0; i < n; i++) {
+      await cards.nth(i).click();
+      await page.waitForSelector('.playmenu', { timeout: 2000 }).catch(() => {});
+      const item = page.locator('.playmenu__item:has-text("当作「传教」")').first();
+      if (!(await item.count())) {
+        await page.keyboard.press('Escape');
+        await page.mouse.click(700, 120); // close the menu
+        continue;
+      }
+      await item.hover();
+      await page.waitForSelector('.card-preview [data-card="evangelist"]', { timeout: 3000 });
+      const why = await item.locator('.playmenu__why').textContent();
+      assert.match(why, /角色技能「传教」/, 'option explains where it comes from');
+      assert.match(why, /传教爱好者/, 'option names the role that grants it');
+      assert.ok(await item.locator('.playmenu__reveal').count(), 'option warns that it reveals the role');
+      await page.screenshot({ path: `${OUT}/ux-play-menu-why.png` });
+      await item.click();
+      await page.waitForSelector('.revealconfirm', { timeout: 3000 });
+      await page.screenshot({ path: `${OUT}/ux-reveal-confirm.png` });
+      await page.click('.revealconfirm .btn:has-text("再想想")');
+      await page.waitForSelector('.revealconfirm', { state: 'detached', timeout: 3000 });
+      assert.equal(await page.locator('.decide[data-kind="turn"]').count(), 1, 'cancelling the reveal changes nothing');
+      assert.equal(await page.evaluate(() => document.querySelector('.myarea__roleflag')?.textContent), '未公开', 'role still hidden after cancelling');
+      await cards.nth(i).click();
+      await page.locator('.playmenu__item:has-text("当作「传教」")').first().click();
+      await page.click('.revealconfirm .btn--gold:has-text("翻开并发动")');
+      await page.waitForSelector('.fx__via, .fx__skill', { timeout: 8000 });
+      log('played as 传教: explanation, source preview, reveal confirmation, skill effect');
+      return true;
+    }
+    return false;
+  }
   const tips = [];
   let emoted = false;
   let audited = false;
@@ -220,7 +326,9 @@ try {
       lastPrompt = promptId;
       await sleep(450);
     }
-    const hasTip = await page.locator('.coach__tip').count();
+    if (!viaDone && !(await page.locator('.coach__tip').count()) && (await page.locator('.decide[data-kind="turn"]').count()) && (await page.locator('.hand .card.is-playable').count()) >= 2) {
+      viaDone = await viaFlow();
+    }    const hasTip = await page.locator('.coach__tip').count();
     if (!hasTip) await page.evaluate(ACT, Math.random()).catch(() => {});
     const tip = await page.evaluate(() => {
       const t = document.querySelector('.coach__tip');
@@ -260,7 +368,10 @@ try {
   }
   log('coach tips shown:', tips.join(' → '));
   for (const needed of ['欢迎来到教学局！', '社群规模', '官作牌', '行动阶段']) assert.ok(tips.includes(needed), `coach showed "${needed}"`);
-  assert.ok(tips.includes('教学完成！'), 'tutorial reached its finale');
+  assert.ok(viaDone, 'the 传教 explanation flow was exercised');
+  const seenFx = await page.evaluate(() => [...window.__fxSeen]);
+  log('effects rendered:', seenFx.filter((c) => /^fx__(play|via|skill|mod|value|num|seatfx|passive|shock|rays)$/.test(c)).join(' '));
+  for (const needed of ['fx__play', 'fx__value', 'fx__num', 'fx__shock']) assert.ok(seenFx.includes(needed), `effect "${needed}" rendered during play`);  assert.ok(tips.includes('教学完成！'), 'tutorial reached its finale');
   await page.waitForSelector('.topbar .signal[data-ping]', { timeout: 6000 });
   await page.click('.coach__tip .btn--gold:has-text("回到首页")');
   await page.waitForSelector('.home__card', { timeout: 8000 });

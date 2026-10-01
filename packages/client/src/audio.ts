@@ -4,7 +4,7 @@ import { prefs } from './net';
  * Tiny WebAudio sound kit — every effect is synthesised, so there are no audio files to ship.
  * Browsers only allow audio after a user gesture; `unlock()` is wired to the first pointer event.
  */
-export type Sfx = 'click' | 'play' | 'draw' | 'dice' | 'event' | 'official' | 'reveal' | 'up' | 'down' | 'turn' | 'win' | 'lose';
+export type Sfx = 'click' | 'play' | 'draw' | 'dice' | 'event' | 'official' | 'reveal' | 'up' | 'down' | 'turn' | 'win' | 'lose' | 'skill' | 'mod' | 'boom' | 'bigup' | 'bigdown';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -110,6 +110,11 @@ const SOUNDS: Record<Sfx, () => void> = {
   turn: () => { tone({ f: NOTE(79), d: 0.3, type: 'sine', v: 0.16 }); tone({ f: NOTE(83), t: 0.14, d: 0.45, type: 'sine', v: 0.16 }); },
   win: () => [60, 64, 67, 72, 76].forEach((n, i) => tone({ f: NOTE(n), t: i * 0.13, d: 1.1, type: 'triangle', v: 0.16 })),
   lose: () => [64, 60, 57].forEach((n, i) => tone({ f: NOTE(n), t: i * 0.22, d: 0.9, type: 'sine', v: 0.14 })),
+  skill: () => { tone({ f: NOTE(60), to: NOTE(84), d: 0.5, type: 'sawtooth', v: 0.07 }); [72, 76, 79, 84].forEach((n, i) => tone({ f: NOTE(n), t: 0.12 + i * 0.07, d: 0.5, type: 'triangle', v: 0.12 })); noise(0.3, 0, 7000, 0.08); },
+  mod: () => { tone({ f: NOTE(88), d: 0.1, type: 'square', v: 0.05 }); tone({ f: NOTE(93), t: 0.07, d: 0.18, type: 'triangle', v: 0.1 }); },
+  boom: () => { tone({ f: 90, to: 38, d: 0.5, type: 'sine', v: 0.4 }); noise(0.35, 0, 600, 0.3); },
+  bigup: () => { tone({ f: 90, to: 38, d: 0.45, type: 'sine', v: 0.35 }); [60, 64, 67, 72, 79].forEach((n, i) => tone({ f: NOTE(n), t: 0.05 + i * 0.07, d: 0.7, type: 'triangle', v: 0.13 })); noise(0.25, 0, 5000, 0.12); },
+  bigdown: () => { tone({ f: 80, to: 30, d: 0.7, type: 'sine', v: 0.4 }); [67, 63, 58, 53].forEach((n, i) => tone({ f: NOTE(n), t: 0.05 + i * 0.1, d: 0.6, type: 'sawtooth', v: 0.07 })); noise(0.4, 0, 400, 0.25); },
 };
 
 export function sfx(name: Sfx) {

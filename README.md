@@ -22,6 +22,10 @@ Create a room, share the 4-letter code (or the `/r/CODE` link), add AI players i
 * **Cards:** hover any card (long-press on a phone) for a large view; terms that need explaining (判定 kinds, 拼点, 扣置 …) and other cards it
   mentions get side boxes, like Slay the Spire's keywords. Each kind of card has its own shape: red rounded **行动**, blue arched **事件**,
   gold landscape **官作**, vertical-name **角色**.
+* **Effects:** every card slams onto the table with its own effect; an unusual play says where it comes from ("角色技能「传教」: 把「白嫖」当作「传教」打出");
+  skills, rule modifiers (煽风点火 +1 …) and every change to 社群规模 or 个人影响力 get an effect that grows with the size of the change. The play menu explains
+  why an option exists (hover it to preview the source card), and anything that would flip your role card asks for confirmation first.
+* **Leaving a game:** 中止本局 proposes abandoning the game and returning to the room; every online player must agree.
 * **Table:** latency bars for every player, emotes (😀), keyboard shortcuts (Space = end action, 1–9 = play card, L = log/chat),
   card-specific effects (switch off with ⚙ → 减少动画), sound with volume.
 

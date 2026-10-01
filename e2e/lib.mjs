@@ -33,12 +33,12 @@ async function freePort() {
  *  TCD_PROMPT_TIMEOUT=0       humans never time out
  *  TCD_OFFLINE_AUTO_MS=3000   a bot covers a player who is offline for 3 s
  */
-export async function startServer(existingUrl) {
+export async function startServer(existingUrl, { realtime = false } = {}) {
   if (existingUrl) return { url: existingUrl, stop: () => {}, errors: () => '' };
   const port = await freePort();
   const proc = spawn(process.execPath, ['packages/server/dist/index.js'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(port), NODE_ENV: 'production', TCD_TEST_FAST: '1', TCD_PROMPT_TIMEOUT: '0', TCD_OFFLINE_AUTO_MS: '3000' },
+    env: { ...process.env, PORT: String(port), NODE_ENV: 'production', TCD_TEST_FAST: realtime ? '0' : '1', TCD_PROMPT_TIMEOUT: '0', TCD_OFFLINE_AUTO_MS: '3000' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let errOut = '';

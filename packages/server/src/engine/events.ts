@@ -33,19 +33,34 @@ export class EventCtx {
     return { source: this.owner, cause: 'event' as const, cardId: this.cardId };
   }
 
+  /**
+   * Apply one event modifier to a number and announce it, so players see *why* the number differs from the card.
+   * `delta` is the change in magnitude it caused (0 = it had no effect and stays silent).
+   */
+  private async announce(before: number, after: number, sourceId: string, text: string) {
+    if (before !== after && before !== 0) await this.g.mod(this.g.cardName(sourceId), text, sourceId, this.owner.id);
+    return after;
+  }
+
   /** Change community by a printed amount (`raw` = computed X, not doubled by 辉针城). */
   async comm(printed: number, raw = false) {
     const { g } = this;
     if (this.mods.preempt) {
-      g.log('「事先科普」阻止了本次社群规模变化', undefined, 'minor');
+      await g.mod('事先科普', '防止了社群规模变化', 'preempt', this.owner.id);
       return 0;
     }
     let v = raw ? printed : this.n(printed);
-    if (this.mods.fan) v = adjustMagnitude(v, 1);
-    if (g.officialActive('hm', this.owner)) v = adjustMagnitude(v, -1);
-    if (g.officialActive('vd', this.owner)) v = adjustMagnitude(v, 1);
+    if (!raw && v !== printed) await g.mod('东方辉针城', `数字翻倍 ${printed > 0 ? '+' : ''}${printed} → ${v > 0 ? '+' : ''}${v}`, 'ddc', this.owner.id);
+    if (this.mods.fan) v = await this.announce(v, adjustMagnitude(v, 1), 'fan_flames', '偏移量 +1');
+    if (g.officialActive('hm', this.owner)) v = await this.announce(v, adjustMagnitude(v, -1), 'hm', '社群规模偏移量 −1');
+    if (g.officialActive('vd', this.owner)) v = await this.announce(v, adjustMagnitude(v, 1), 'vd', '社群规模偏移量 +1');
     if (v > 0) {
-      for (const c of g.players) if (g.revealed(c, 'cosplayer') && g.s.community < c.influence) v += 1; // 游场②
+      for (const c of g.players) {
+        if (g.revealed(c, 'cosplayer') && g.s.community < c.influence) {
+          v += 1; // 游场②
+          await g.mod('游场', '偏移量 +1', 'cosplayer', c.id);
+        }
+      }
     }
     return g.changeCommunity(v, this.src);
   }
@@ -53,10 +68,10 @@ export class EventCtx {
   async inf(p: PlayerState, printed: number, raw = false) {
     if (!this.g.affects(p, 'event', this.owner)) return 0;
     let v = raw ? printed : this.n(printed);
-    if (this.mods.fan) v = adjustMagnitude(v, 1);
+    if (!raw && v !== printed) await this.g.mod('东方辉针城', `数字翻倍 ${printed > 0 ? '+' : ''}${printed} → ${v > 0 ? '+' : ''}${v}`, 'ddc', this.owner.id);
+    if (this.mods.fan) v = await this.announce(v, adjustMagnitude(v, 1), 'fan_flames', '偏移量 +1');
     return this.g.changeInfluence(p, v, this.src);
   }
-
   async draw(p: PlayerState, k: number) {
     if (this.g.affects(p, 'event', this.owner)) await this.g.draw(p, k, this.owner);
   }
@@ -479,7 +494,7 @@ export async function resolveEvent(g: Game, owner: PlayerState, card: CardInstan
   };
   g.log(`{p:${owner.id}} 的事件 {c:${card.defId}} ${DIR_LABEL[dir]}发生`, { type: 'event', playerId: owner.id, cardId: card.defId, direction: dir }, 'major');
   if (delays.length) g.log(`延时牌生效：${delays.map((x) => `{c:${x.effect}}`).join('')}`);
-  await g.pause(600);
+  await g.pause(1300);
 
   const ev = new EventCtx(g, owner, card, dir, mods);
   const h = EVENTS[card.defId];

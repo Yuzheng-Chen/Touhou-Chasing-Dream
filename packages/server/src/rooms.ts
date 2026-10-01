@@ -1,6 +1,6 @@
 import {
   DEFAULT_SETTINGS, MAX_PLAYERS, MIN_PLAYERS, SETTING_LIMITS,
-  type ChatMessage, type ClientToServer, type RoomSettings, type RoomSummary, type RoomView, type ServerToClient,
+  type ChatMessage, type ClientToServer, type RoomSettings, type RoomSummary, type RoomView, type ServerToClient, type VoteView,
 } from '@tcd/shared';
 import type { Server, Socket } from 'socket.io';
 import { AbortError, Game } from './engine/Game.js';
@@ -46,6 +46,20 @@ const clampInt = (v: unknown, [lo, hi]: readonly [number, number], fallback: num
   return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : fallback;
 };
 
+const VOTE_MS = Number(process.env.TCD_VOTE_MS ?? 30_000);
+const VOTE_COOLDOWN_MS = 45_000;
+
+interface VoteState {
+  id: string;
+  byId: string;
+  byName: string;
+  voters: string[];
+  yes: Set<string>;
+  no: Set<string>;
+  deadline: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 /** Roles used by the coached tutorial game: simple, and on opposite sides so the win conditions can be explained. */
 export const TUTORIAL_ROLES = ['evangelist', 'touhou_police', 'freeloader'];
 
@@ -57,6 +71,9 @@ class Room {
   chat: ChatMessage[] = [];
   lastActive = Date.now();
   tutorial = false;
+  vote: VoteState | null = null;
+  /** Earliest time a player may propose again after a refused vote. */
+  private voteCooldown = new Map<string, number>();
 
   constructor(readonly id: string, public hostId: string, private readonly hub: RoomHub) {}
 
@@ -96,6 +113,65 @@ class Room {
     }
   }
 
+  // ── abandon-the-game vote ──────────────────────────────────────────────────────
+  voteView(): VoteView | null {
+    const v = this.vote;
+    return v && { id: v.id, kind: 'abort', byId: v.byId, byName: v.byName, voters: v.voters, yes: [...v.yes], no: [...v.no], deadline: v.deadline };
+  }
+
+  broadcastVote() {
+    const view = this.voteView();
+    for (const pid of this.audience()) this.hub.emitTo(pid, 'vote:state', view);
+  }
+
+  /** Returns an error message, or null when the vote started. */
+  startVote(byId: string): string | null {
+    const me = this.members.find((m) => m.id === byId);
+    if (!me || me.isBot) return '只有牌桌上的玩家可以发起';
+    if (this.status !== 'playing' || !this.game) return '游戏没有在进行';
+    if (this.vote) return '已经有一个投票在进行';
+    const wait = (this.voteCooldown.get(byId) ?? 0) - Date.now();
+    if (wait > 0) return `刚刚被拒绝，请 ${Math.ceil(wait / 1000)} 秒后再试`;
+    // Everyone who is actually here must agree; absent or 托管 players can't hold the table hostage.
+    const voters = this.humans.filter((m) => this.hub.online(m.id) && !this.game!.player(m.id).auto).map((m) => m.id);
+    const id = Math.random().toString(36).slice(2, 8);
+    const timer = setTimeout(() => this.resolveVote(true), VOTE_MS);
+    this.vote = { id, byId, byName: me.name, voters, yes: new Set([byId]), no: new Set(), deadline: Date.now() + VOTE_MS, timer };
+    this.broadcastVote();
+    this.resolveVote(false);
+    return null;
+  }
+
+  castVote(pid: string, yes: boolean) {
+    const v = this.vote;
+    if (!v || !v.voters.includes(pid) || v.yes.has(pid) || v.no.has(pid)) return;
+    (yes ? v.yes : v.no).add(pid);
+    this.broadcastVote();
+    this.resolveVote(false);
+  }
+
+  /** Settle the vote when it is decided (or, with expired, when time ran out). */
+  private resolveVote(expired: boolean) {
+    const v = this.vote;
+    if (!v) return;
+    const everyoneYes = v.voters.every((id) => v.yes.has(id));
+    if (!(everyoneYes || v.no.size > 0 || expired)) return;
+    clearTimeout(v.timer);
+    this.vote = null;
+    this.broadcastVote();
+    if (everyoneYes) {
+      this.stop();
+      this.status = 'lobby';
+      for (const pid of this.audience()) this.hub.emitTo(pid, 'toast', { text: '全员同意：本局已中止，回到房间', tone: 'good' });
+      this.broadcastRoom();
+      this.broadcastGame();
+    } else {
+      this.voteCooldown.set(v.byId, Date.now() + VOTE_COOLDOWN_MS);
+      const why = v.no.size ? '有人拒绝' : '投票超时';
+      for (const pid of this.audience()) this.hub.emitTo(pid, 'toast', { text: `${why}，继续游戏`, tone: 'bad' });
+    }
+  }
+
   start() {
     const s = this.settings;
     const seats = this.members.map((m) => ({ ...m, host: m.id === this.hostId }));
@@ -108,6 +184,7 @@ class Room {
       startingHand: s.startingHand,
       firstPlayer: s.firstPlayer,
       balancedRoles: s.balancedRoles,
+      pace: s.pace,
       // The tutorial deals fixed roles (you are always the first seat) so the coaching can name them.
       ...(this.tutorial ? { roles: TUTORIAL_ROLES } : {}),
     }, () => this.broadcastGame());
@@ -127,6 +204,11 @@ class Room {
   }
 
   stop() {
+    if (this.vote) {
+      clearTimeout(this.vote.timer);
+      this.vote = null;
+      this.broadcastVote();
+    }
     this.game?.abort();
     this.game = null;
   }
@@ -206,6 +288,7 @@ export class RoomHub {
         r.broadcastRoom();
         r.broadcastGame();
         for (const msg of r.chat.slice(-50)) sock.emit('chat:message', msg);
+        sock.emit('vote:state', r.voteView());
       } else {
         sock.emit('room:state', null);
       }
@@ -307,6 +390,7 @@ export class RoomHub {
       if (p.firstPlayer === 'random' || p.firstPlayer === 'host') s.firstPlayer = p.firstPlayer;
       if (typeof p.balancedRoles === 'boolean') s.balancedRoles = p.balancedRoles;
       if (typeof p.allowSpectators === 'boolean') s.allowSpectators = p.allowSpectators;
+      if (p.pace === 'quick' || p.pace === 'normal' || p.pace === 'epic') s.pace = p.pace;
       r.broadcastRoom();
     });
 
@@ -359,6 +443,17 @@ export class RoomHub {
       if (!r.game.answer(session.playerId, pid, value) && current?.id === pid) {
         sock.emit('toast', { text: '这个选择无效，请重试', tone: 'bad' });
       }
+    });
+
+    sock.on('vote:start', (ack) => {
+      const r = room();
+      if (!r || !session || r.tutorial) return fail(ack, '现在不能发起投票');
+      const err = r.startVote(session.playerId);
+      return err ? fail(ack, err) : ack({ ok: true, data: null });
+    });
+    sock.on('vote:cast', ({ yes }) => {
+      const r = room();
+      if (r && session) r.castVote(session.playerId, !!yes);
     });
 
     sock.on('game:resume', () => {

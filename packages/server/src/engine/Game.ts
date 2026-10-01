@@ -1,6 +1,6 @@
 import {
   ACTION_CARDS, BASE_INFLUENCE_CAP, COMMUNITY_LIMIT, EVENT_CARDS, JUDGE_LABEL, OFFICIAL_CARDS,
-  actionDef, baseHandLimit, cardDef, endThreshold, judgeResult,
+  PACE_FACTOR, actionDef, baseHandLimit, cardDef, endThreshold, judgeResult,
   type AnswerOf, type CardInstance, type Fx, type JudgeKind, type LogEntry, type Prompt,
   type PromptKind, type PromptSpec, type Tone,
 } from '@tcd/shared';
@@ -43,6 +43,8 @@ export interface GameOptions {
   firstPlayer?: 'random' | 'host';
   /** Offer each player a 繁荣 and a 小众 role (default true). */
   balancedRoles?: boolean;
+  /** How long effects linger (see PACE_FACTOR). */
+  pace?: 'quick' | 'normal' | 'epic';
 }
 
 /** What caused a number to change — decides immunities and triggers. */
@@ -189,10 +191,11 @@ export class Game {
     });
   }
 
+  /** Linger so players can watch an effect play. Scaled by the room's pace; skipped in tests. */
   async pause(ms: number) {
     if (this.opts.fast || ms <= 0) return;
     this.touch();
-    await new Promise((r) => setTimeout(r, ms));
+    await new Promise((r) => setTimeout(r, ms * PACE_FACTOR[this.opts.pace ?? 'normal']));
     if (this.aborted) throw new AbortError();
   }
 
@@ -224,7 +227,10 @@ export class Game {
     const id = `q${++this.promptSeq}`;
     const botPlays = who.isBot || who.auto;
     const timeout = botPlays ? 0 : this.opts.promptTimeout;
-    const prompt = { ...spec, id, deadline: timeout ? Date.now() + timeout : 0 } as Prompt;
+    // A yes/no or number prompt about your own face-down role's skill: saying yes will turn the card face-up.
+    const roleCard = (spec as { cardId?: string }).cardId;
+    const reveals = !who.roleRevealed && !!roleCard && roleCard === who.role && (spec.kind === 'choice' || spec.kind === 'number');
+    const prompt = { ...spec, id, deadline: timeout ? Date.now() + timeout : 0, ...(reveals ? { reveals: true } : {}) } as Prompt;
     return new Promise<AnswerOf<K>>((resolve, reject) => {
       const entry: Pending = {
         prompt, playerId: who.id, secret: !!opts.secret,
@@ -613,8 +619,9 @@ export class Game {
     t.influence = to;
     this.log(
       `{p:${t.id}} 个人影响力 {n:${actual > 0 ? '+' : ''}${actual}} → ${to}`,
-      { type: 'influence', playerId: t.id, from, to },
+      { type: 'influence', playerId: t.id, from, to, cardId: o.cardId, by: o.source?.id },
     );
+    await this.pause(380 + 120 * Math.min(5, Math.abs(actual)));
     if (actual > 0 && this.s.turn) this.s.turn.influenceGain[t.id] = (this.s.turn.influenceGain[t.id] ?? 0) + actual;
     await Roles.afterInfluenceChange(this, t, actual, o);
     return actual;
@@ -633,7 +640,8 @@ export class Game {
     const actual = to - from;
     if (actual === 0) return 0;
     this.s.community = to;
-    this.log(`社群规模 {n:${actual > 0 ? '+' : ''}${actual}} → ${to}`, { type: 'community', from, to });
+    this.log(`社群规模 {n:${actual > 0 ? '+' : ''}${actual}} → ${to}`, { type: 'community', from, to, cardId: o.cardId, by: o.source?.id });
+    await this.pause(560 + 140 * Math.min(6, Math.abs(actual)));
     if (actual < 0 && this.s.turn) this.s.turn.communityDecreased = true;
     await Roles.afterCommunityChange(this, actual);
     return actual;
@@ -679,10 +687,34 @@ export class Game {
   //  Roles
   // ══════════════════════════════════════════════════════════════
 
+  /**
+   * Turn a role card face-up. why is the skill that caused it (shown as a skill activation); without it, a plain reveal.
+   * Also announces the skill when the role was already face-up (so every use of a skill gets its moment on screen).
+   */
   reveal(p: PlayerState, why?: string) {
-    if (p.roleRevealed) return;
+    const first = !p.roleRevealed;
+    const skill = !!why && !/开局|千人千乡/.test(why);
+    if (skill) this.skillFx(p, why!, false, first);
+    if (!first) return;
     p.roleRevealed = true;
-    this.log(`{p:${p.id}} 翻开了角色牌 {c:${p.role}}${why ? `（${why}）` : ''}`, { type: 'reveal', playerId: p.id, roleId: p.role }, 'major');
+    this.log(`{p:${p.id}} 翻开了角色牌 {c:${p.role}}${why ? `（${why}）` : ''}`, skill ? undefined : { type: 'reveal', playerId: p.id, roleId: p.role }, 'major');
+  }
+
+  /** Log + effect for a role skill going off (no pause: for reactive skills inside other effects). */
+  skillFx(p: PlayerState, name: string, passive = false, reveals = false) {
+    this.log(`{p:${p.id}} ${passive ? '' : '发动'}「${name}」${passive ? '（被动）' : ''}`, { type: 'skill', playerId: p.id, roleId: p.role, skill: name, passive, reveals }, passive ? 'minor' : 'major');
+  }
+
+  /** A skill going off with time to watch it. */
+  async skill(p: PlayerState, name: string, passive = false) {
+    this.skillFx(p, name, passive, !passive && !p.roleRevealed);
+    await this.pause(passive ? 700 : 1150);
+  }
+
+  /** A rule modifier changing a printed number (煽风点火 +1, 东方辉针城 ×2 …). */
+  async mod(label: string, amount: string, sourceId?: string, playerId?: string) {
+    this.log(`${sourceId ? `{c:${sourceId}}` : label} ${amount}`, { type: 'mod', label, amount, sourceId, playerId }, 'minor');
+    await this.pause(820);
   }
 
   /** Once-per-turn style counters. */
